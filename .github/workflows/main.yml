@@ -34,10 +34,10 @@ jobs:
         run: pip install -r .github/scripts/validation_requirements.txt
 
       - name: Run Formatting Check
-        run: bash .github/scripts/check_formatting.sh
+        run: bash .github/scripts/validate_formatting.sh
 
       - name: Run Linting
-        run: bash .github/scripts/linting.sh
+        run: bash .github/scripts/run_linting.sh
 
   code_formatting:
     runs-on: ubuntu-latest
@@ -54,7 +54,7 @@ jobs:
         run: pip install isort autopep8 docformatter autoflake
 
       - name: Run Code Formatting
-        run: bash .github/scripts/do_formatting.sh
+        run: bash .github/scripts/apply_formatting.sh
 
   code_test:
     runs-on: ubuntu-latest
