@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - "feature/**"
+  pull_request:
+    branches:
+      - dev
+      - "feature/**"
+
+jobs:
+  code_validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        name: Checkout Code
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install validation dependencies
+        run: pip install -r .github/scripts/validation_requirements.txt
+
+      - name: Run Formatting Check
+        run: bash .github/scripts/check_formatting.sh
+
+      - name: Run Linting
+        run: bash .github/scripts/linting.sh
+
+  code_formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        name: Checkout Code
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+
+      - name: Install formatting dependencies
+        run: pip install isort autopep8 docformatter autoflake
+
+      - name: Run Code Formatting
+        run: bash .github/scripts/do_formatting.sh
+
+  code_test:
+    runs-on: ubuntu-latest
+    needs: [code_validation]
+    steps:
+      - uses: actions/checkout@v3
+        name: Checkout Code
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest
+        # If tests are in a specific directory, you can specify it like this:
+        # run: pytest tests/

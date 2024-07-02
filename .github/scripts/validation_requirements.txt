@@ -1,0 +1,17 @@
+# Linting tools
+flake8==3.9.2       # Linting tool for checking code style
+pylint==2.9.3       # Comprehensive linting tool for static code analysis
+
+# Code formatting tools
+black==21.6b0       # Automatic code formatter
+docformatter==1.7.1 # Formatter for docstrings
+
+# Pre-commit hooks management
+pre-commit==2.13.0  # Tool for managing pre-commit hooks
+
+# Additional tools for code checks
+mypy==0.812         # Static type checker
+isort==5.9.2        # Python utility for sorting imports
+
+# YAML validation
+yamllint==1.26.2    # Linter for YAML files

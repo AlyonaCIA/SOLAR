@@ -1,0 +1,94 @@
+# ---- Python ----
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# ---- Distribution / Packaging ----
+# Exclude all build outputs and intermediate files
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+
+# ---- Testing ----
+# Coverage reports and pytest cache
+htmlcov/
+.coverage
+.coverage.*
+.cache
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# ---- Virtual Environments ----
+# Ignore Python virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ---- Development Tools ----
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# PyCharm project settings and virtual environment info
+.idea/
+*.iml
+
+# VSCode settings
+.vscode/
+
+# ---- Logs and Databases ----
+# Django specific files (if you are using Django)
+*.log
+db.sqlite3
+db.sqlite3-journal
+
+# ---- Caching Files ----
+# Python byte code and dynamic modules
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# ---- Sphinx documentation ----
+# Generated documentation files
+docs/_build/
+
+# ---- Miscellaneous ----
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# ---- Type Checkers ----
+# Ignore artifacts from static type checking
+.mypy_cache/
+.pytype/
+.pyre/
+
+# ---- Security ----
+# Potential environment variables and secrets
+.sandbox
+
+# ---- Pre-commit ----
+# Pre-commit hooks
+.pre-commit-config.yaml
+
+# ---- CI/CD ----
+# CI/CD related files and directories
+ci/

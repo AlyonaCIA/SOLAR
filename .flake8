@@ -1,0 +1,30 @@
+#E731: Don't use lambdas (We want to use lambdas)
+#E712: Comparison to True and False (removed due to Pandas conventions)
+#E266: Too many leading # in comment
+#W503: line break before binary operator
+#F401: Ignore unused imports. In __init__ it's a problem
+[pep8]
+max-line-length=88
+ignore=E731,E266
+[flake8]
+max-line-length=88
+ignore=E731,E266,W503,E712
+exclude=.git,
+        __pycache__,
+        docs/source/conf.py,
+        old,
+        build,
+        dist,
+        test/,
+        .eggs
+per-file-ignores = __init__.py:F401
+[DESIGN]
+# This allows for 10 instance attributes in a class (default is 7).
+# Associated pylint error R0902: too-many-instance-attributes
+max-attributes=10
+[MESSAGES CONTROL]
+disable=invalid-name,too-many-arguments,too-many-locals,logging-fstring-interpolation,wrong-import-order,duplicate-code,singleton-comparison
+[MASTER]
+# This makes sure that the current directory is included in path.
+# It solves relative import issues.
+init-hook="from pathlib import Path as _PTH;sys.path += [_PTH().absolute()]"
