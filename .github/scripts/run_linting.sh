@@ -3,7 +3,7 @@
 set -e
 
 # Source message handler functions
-source ./ci/scripts/message-handler.sh
+source .github/scripts/handle_messages.sh
 
 # Function to get all Python files excluding the test directories
 get_python_files() {
@@ -52,7 +52,7 @@ function run_pylint {
             echo "[WARNING] File not found: $file"
         fi
     done
-    info "Pylint passed on the code"
+    info "Pylint passed on the code :)"
 }
 
 # Execute the linting functions

@@ -3,7 +3,7 @@
 set -e
 
 # Source message handler functions
-source ./ci/scripts/message-handler.sh
+source .github/scripts/handle_messages.sh
 
 # Function to confirm readiness
 confirm_ready() {
@@ -49,9 +49,7 @@ autopep8 --in-place $(get_python_files)
 
 # Run autopep8 with some aggressive parameters enabled
 info "Performing selective aggressive autopep8"
-autopep8 --global-config ${CI_SCRIPTS_PATH}/.aggressive.pep8 \
-         --aggressive \
-         --in-place $(get_python_files)
+autopep8 --aggressive --aggressive --in-place $(get_python_files)
 
 info "Performing docformatter"
 docformatter --wrap-summaries 88 \
@@ -64,4 +62,4 @@ autoflake --in-place \
           --remove-all-unused-imports \
           --remove-unused-variables $(get_python_files)
 
-info "Formatting completed"
+info "Formatting completed :)"

@@ -1,4 +1,3 @@
-# ---- Python ----
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -7,26 +6,97 @@ __pycache__/
 # C extensions
 *.so
 
-# ---- Distribution / Packaging ----
-# Exclude all build outputs and intermediate files
+# Distribution / packaging
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
 *.egg-info/
+.installed.cfg
 *.egg
 MANIFEST
 
-# ---- Testing ----
-# Coverage reports and pytest cache
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
 htmlcov/
+.tox/
+.nox/
 .coverage
 .coverage.*
 .cache
+nosetests.xml
+coverage.xml
 *.cover
+*.py,cover
 .hypothesis/
 .pytest_cache/
+cover/
 
-# ---- Virtual Environments ----
-# Ignore Python virtual environments
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+# Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
 .env
 .venv
 env/
@@ -35,7 +105,6 @@ ENV/
 env.bak/
 venv.bak/
 
-# ---- Development Tools ----
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -43,52 +112,38 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints
+# mkdocs documentation
+/site
 
-# PyCharm project settings and virtual environment info
-.idea/
-*.iml
-
-# VSCode settings
-.vscode/
-
-# ---- Logs and Databases ----
-# Django specific files (if you are using Django)
-*.log
-db.sqlite3
-db.sqlite3-journal
-
-# ---- Caching Files ----
-# Python byte code and dynamic modules
-*.py[cod]
-*.pyo
-*.pyd
-*.so
-
-# ---- Sphinx documentation ----
-# Generated documentation files
-docs/_build/
-
-# ---- Miscellaneous ----
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# ---- Type Checkers ----
-# Ignore artifacts from static type checking
+# mypy
 .mypy_cache/
-.pytype/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
 .pyre/
 
-# ---- Security ----
-# Potential environment variables and secrets
-.sandbox
+# pytype static type analyzer
+.pytype/
 
-# ---- Pre-commit ----
-# Pre-commit hooks
-.pre-commit-config.yaml
+# Cython debug symbols
+cython_debug/
 
-# ---- CI/CD ----
-# CI/CD related files and directories
-ci/
+# Ignore VS Code files
+.vscode/
+.sandbox/
+
+# Exclude specific files and directories
+*.code-workspace
+
+# Ignore logs and databases
+*.log
+*.db
+*.sqlite
+
+# Ignore PyCharm project files
+.idea/
+
+# Ignore IntelliJ IDEA project files
+*.iml
+.idea/
