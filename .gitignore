@@ -135,15 +135,3 @@ cython_debug/
 
 # Exclude specific files and directories
 *.code-workspace
-
-# Ignore logs and databases
-*.log
-*.db
-*.sqlite
-
-# Ignore PyCharm project files
-.idea/
-
-# Ignore IntelliJ IDEA project files
-*.iml
-.idea/
