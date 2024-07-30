@@ -5,18 +5,23 @@ set -e
 # Source message handler functions
 source .github/scripts/handle_messages.sh
 
-# Function to confirm readiness
-confirm_ready() {
-    while true; do
-        warning "Remember to save files before running formatting!"
 
-        read -p "Ready to run formatting in-place? [y/n]:" yn
-        case $yn in
-            [Yy]* ) break;;
-            [Nn]* ) exit;;
-            * ) echo "Please answer [y]es or [n]o.";;
-        esac
-    done
+# Function to confirm readiness (skipped in CI environment)
+confirm_ready() {
+    if [ -z "$CI" ]; then
+        while true; do
+            warning "Remember to save files before running formatting!"
+
+            read -p "Ready to run formatting in-place? [y/n]:" yn
+            case $yn in
+                [Yy]* ) break;;
+                [Nn]* ) exit;;
+                * ) echo "Please answer [y]es or [n]o.";;
+            esac
+        done
+    else
+        info "Skipping readiness confirmation in CI environment"
+    fi
 }
 
 # Function to get all Python files
@@ -62,4 +67,4 @@ autoflake --in-place \
           --remove-all-unused-imports \
           --remove-unused-variables $(get_python_files)
 
-info "Formatting completed :)"
+info "Formatting completed"
