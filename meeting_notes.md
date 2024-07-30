@@ -72,3 +72,11 @@
    - **Clustering no supervisado:**
      - Aplicar clustering no supervisado a los datos.
      - Mostrar sobre imágenes del sol dónde aparecen los grupos encontrados.
+
+3. **Requerimientos Adicionales y Comentarios del Profesor:**
+
+   - Recursos de scikit-learn para detección de anomalías y clustering:
+   - Detección de Outliers: Algunos ejemplos básicos pero interesantes con explicaciones detalladas.
+   - Densidad: Posibilidad de generar un "mapa de calor" de manera sencilla y ver si hay algo relevante.
+   - t-SNE para visualización: Usar t-SNE como estrategia para ver todos los datos en un plot bidimensional. Referencia al artículo de Brandon Panos en física solar usando PCA y t-SNE para visualizar datos multicanal (artículo).
+   - Clustering: Probar aquellos métodos de clustering que tengan más relación con la distribución de los datos.
