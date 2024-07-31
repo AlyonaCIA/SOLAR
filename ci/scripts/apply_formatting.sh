@@ -5,20 +5,6 @@ set -e
 # Source message handler functions
 source ci/scripts/handle_messages.sh
 
-# Function to confirm readiness
-confirm_ready() {
-    while true; do
-        warning "Remember to save files before running formatting!"
-
-        read -p "Ready to run formatting in-place? [y/n]:" yn
-        case $yn in
-            [Yy]* ) break;;
-            [Nn]* ) exit;;
-            * ) echo "Please answer [y]es or [n]o.";;
-        esac
-    done
-}
-
 # Function to get all Python files
 get_python_files() {
     find . -type f -name "*.py" -not -path "./.sandbox/*"
@@ -33,7 +19,6 @@ check_command() {
 }
 
 # Main script
-confirm_ready
 
 # Check necessary commands
 check_command isort
