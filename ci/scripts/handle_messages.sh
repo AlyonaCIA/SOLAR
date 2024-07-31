@@ -49,3 +49,9 @@ warning() {
 error() {
     print_message "$red" "ERROR" "$1" >&2
 }
+
+# Function to handle errors
+error_exit() {
+    error "$1"
+    exit 1
+}
