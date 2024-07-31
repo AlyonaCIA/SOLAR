@@ -5,9 +5,9 @@ set -e
 # Source message handler functions
 source ci/scripts/handle_messages.sh
 
-# Function to get all Python files excluding the test directories
+# Function to get all Python files
 get_python_files() {
-    find . -type f -name "*.py" -not -path "./.sandbox/*" -not -path "./test/*"
+    find . -type f -name "*.py" -not -path "./.sandbox/*"
 }
 
 # Run Flake8 linter

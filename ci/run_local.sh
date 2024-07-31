@@ -66,8 +66,7 @@ ${CI_SCRIPTS_PATH}/run_linting.sh
 
 if $run_tests; then
     echo "Running tests"
-    # Remove this line
-    # ${CI_SCRIPTS_PATH}/integration_tests.sh
+    pytest
 fi
 
 echo "Local checks passed :) Might still deviate from GitHub Actions checks :/"

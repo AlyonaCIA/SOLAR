@@ -29,7 +29,7 @@ jobs:
 
       - name: Apply code formatting
         env:
-          CI: true # Definir variable de entorno CI
+          CI: true
         run: ci/scripts/apply_formatting.sh
 
   code_validation:
@@ -70,7 +70,7 @@ jobs:
           pip install flake8 pylint
 
       - name: Run linting
-        run: ci/scripts/run_local.sh --run-format
+        run: ci/run_local.sh --run-format
 
   tests:
     runs-on: ubuntu-latest
