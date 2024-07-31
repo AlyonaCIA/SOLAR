@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r ci/scripts/validation_requirements.txt
+          pip install isort autopep8 docformatter autoflake flake8 pylint
 
       - name: Validate code formatting
         run: ci/scripts/validate_formatting.sh
@@ -67,7 +67,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pylint
+          pip install flake8 pylint autopep8
 
       - name: Run linting
         run: ci/run_local.sh --run-format
