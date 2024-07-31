@@ -3,11 +3,11 @@
 set -e
 
 # Source message handler functions
-source .github/scripts/handle_messages.sh
+source ci/scripts/handle_messages.sh
 
-# Function to get all Python files excluding the test directories and sandbox
+# Function to get all Python files excluding the test directories
 get_python_files() {
-    git ls-files '*.py' ':!:sandbox/*' ':!:test/*' ':!:tests/*'
+    find . -type f -name "*.py" -not -path "./.sandbox/*" -not -path "./test/*"
 }
 
 # Run Flake8 linter

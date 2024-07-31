@@ -3,30 +3,25 @@
 set -e
 
 # Source message handler functions
-source .github/scripts/handle_messages.sh
+source ci/scripts/handle_messages.sh
 
-
-# Function to confirm readiness (skipped in CI environment)
+# Function to confirm readiness
 confirm_ready() {
-    if [ -z "$CI" ]; then
-        while true; do
-            warning "Remember to save files before running formatting!"
+    while true; do
+        warning "Remember to save files before running formatting!"
 
-            read -p "Ready to run formatting in-place? [y/n]:" yn
-            case $yn in
-                [Yy]* ) break;;
-                [Nn]* ) exit;;
-                * ) echo "Please answer [y]es or [n]o.";;
-            esac
-        done
-    else
-        info "Skipping readiness confirmation in CI environment"
-    fi
+        read -p "Ready to run formatting in-place? [y/n]:" yn
+        case $yn in
+            [Yy]* ) break;;
+            [Nn]* ) exit;;
+            * ) echo "Please answer [y]es or [n]o.";;
+        esac
+    done
 }
 
 # Function to get all Python files
 get_python_files() {
-    git ls-files '*.py'
+    find . -type f -name "*.py" -not -path "./.sandbox/*"
 }
 
 # Function to check if a command exists
@@ -47,14 +42,16 @@ check_command docformatter
 check_command autoflake
 
 info "Sorting imports with isort"
-isort .
+isort $(get_python_files)
 
 info "Performing autopep8 on files"
 autopep8 --in-place $(get_python_files)
 
 # Run autopep8 with some aggressive parameters enabled
 info "Performing selective aggressive autopep8"
-autopep8 --aggressive --aggressive --in-place $(get_python_files)
+autopep8 --global-config ${CI_SCRIPTS_PATH}/.aggressive.pep8 \
+         --aggressive \
+         --in-place $(get_python_files)
 
 info "Performing docformatter"
 docformatter --wrap-summaries 88 \

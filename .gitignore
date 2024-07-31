@@ -133,9 +133,6 @@ cython_debug/
 .vscode/
 .sandbox/
 
-# Specific files to ignore
-example.py
-
 # Exclude specific files and directories
 *.code-workspace
 
