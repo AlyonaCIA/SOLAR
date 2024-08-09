@@ -147,3 +147,4 @@ cython_debug/
 # Ignore IntelliJ IDEA project files
 *.iml
 .idea/
+src/data_prep/sdo_data
