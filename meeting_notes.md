@@ -42,9 +42,11 @@
 
    - Decidir si el proyecto será open source y si se dejará el código y los pesos del modelo abiertos.
 
+---
+
 ## Meeting 2 - 2024-07-10
 
-**Participants:** Alyona Carolina Ivanova Araujo, Professor Luis Felipe Giraldo Trujillo, Carlos José Díaz Baso, Juan Camilo Guevara mez
+**Participants:** Alyona Carolina Ivanova Araujo, Professor Luis Felipe Giraldo Trujillo, Carlos José Díaz Baso, Juan Camilo Guevara G.
 
 ### Topics Discussed:
 
@@ -129,3 +131,113 @@ Estos artículos fueron añadidos para:
 1. Implementar las metodologías propuestas en los artículos para la detección de anomalías en datos del SDO.
 2. Crear visualizaciones y gráficos en 2D y 3D para validar las técnicas.
 3. Superponer los resultados del clustering sobre las imágenes solares para identificar patrones anómalos.
+
+---
+
+# Meeting Notes
+
+## Meeting 3 - 2024-11-01
+
+**Participants:** Alyona Carolina Ivanova Araujo, Carlos José Díaz Baso, Juan C Guevara G.
+
+### Topics Discussed:
+
+1. **Preparación y visualización de datos multicanal:**
+
+   - Confirmar que todos los canales se pueden descargar sin problemas y realizar una inspección inicial.
+   - Comparar las escalas de píxeles y los valores de cuentas por segundo entre canales.
+
+2. **Scatter Plots entre canales:**
+
+   - Crear gráficos de dispersión entre pares de canales, como 171 vs 304 o 94 vs 335, para analizar distribuciones y relaciones entre los canales.
+   - Identificar combinaciones inusuales de brillo entre canales que puedan indicar anomalías.
+
+3. **Definición progresiva de características para anomalías:**
+
+   - Comenzar usando dos canales como características y progresar hacia el uso de tres o más.
+   - Analizar cómo se comportan las combinaciones de canales en las regiones brillantes (como un flare).
+
+4. **Propuesta de Carlos:**
+
+   - Ignorar momentáneamente la información espacial para enfocarse en cómo las anomalías se reflejan en las combinaciones multicanal.
+   - Generar gráficos de dispersión para entender relaciones en múltiples canales a la vez.
+
+5. **Downsizing de imágenes:**
+
+   - Reducir el tamaño de las imágenes tomando cada 2 o 3 píxeles como estrategia para analizar imágenes completas manteniendo la similitud con la original.
+
+6. **Flare y su contexto:**
+
+   - Analizar el comportamiento del flare en imágenes completas versus subregiones pequeñas donde ocupa un porcentaje menor de la imagen.
+
+7. **Separación por regiones:**
+
+   - Evaluar si el análisis debe realizarse en conjunto (disco y limbo) o por separado.
+
+8. **Limitaciones y experimentación con métodos actuales:**
+   - Investigar cómo métodos como Meanshift responden a anomalías en regiones con gradientes bajos o nulos.
+   - Considerar casos en los que scikit-learn no sea suficiente y evaluar herramientas más robustas como PyTorch.
+
+---
+
+### Próximos Pasos
+
+1. **Análisis y preparación de datos:**
+
+   - Verificar que los canales de datos se descarguen correctamente y explorar las diferencias de escala y valores entre ellos.
+   - Crear gráficos de dispersión para pares de canales seleccionados (e.g., 171 vs 304, 94 vs 335).
+
+2. **Definición de anomalías:**
+
+   - Implementar un enfoque basado en combinaciones de múltiples canales para definir anomalías.
+   - Progresar desde combinaciones de dos canales a combinaciones de tres o más.
+
+3. **Exploración y experimentación:**
+
+   - Probar técnicas de downsizing para imágenes completas.
+   - Separar el análisis entre disco y limbo para identificar posibles diferencias.
+
+4. **Herramientas y técnicas avanzadas:**
+
+   - Realizar pruebas con scikit-learn en conjuntos de datos más grandes.
+   - Evaluar la posibilidad de implementar algoritmos en PyTorch para manejar mayores volúmenes de datos.
+
+5. **Colaboración y validación:**
+   - Reunir retroalimentación sobre los métodos iniciales y ajustarlos en función de los resultados observados.
+
+---
+
+### Archivos Nuevos
+
+Ningún archivo nuevo ha sido añadido aún para esta reunión.
+
+### Propósito
+
+La discusión de esta reunión busca consolidar la estrategia para definir y detectar anomalías en datos solares multicanal, además de preparar el entorno para manejar datos a mayor escala.
+
+---
+
+# Meeting Notes
+
+## Meeting 4 - 2024-12-03
+
+**Participants:** Alyona Carolina Ivanova Araujo, Carlos José Díaz Baso, Juan C Guevara G.
+
+### Topics Discussed:
+
+1.  \*\* Tareas realizadas ""
+
+    - Exploracion y descarga de los datos (Servidor esta fallando.)
+    - Graficcas de los canales AIA y para contexto, estudio y entender los datos, que es cada canal - https://www.thesuntoday.org/sun/wavelengths/
+    - Se realizo una mascara del disco solar para trabajar con pixeles dentro de Limbo solar (A discutir).
+    - Graficas 2D de dispersion entre pares de canales log y not logaritmicas.
+    - Graficas 2D con los datos normalizados, donde exploraremos algunas rrlaciones interesantes.
+    - Grafica 3D para una comprension mas profunda de como se relacionan los canales, (Canales de la fotosfera vs los de la Cromosfera.)
+    - De la reunion anterior. 3. **Definición progresiva de características para anomalías:**
+
+          - Comenzar usando dos canales como características y progresar hacia el uso de tres o más.
+          - Analizar cómo se comportan las combinaciones de canales en las regiones brillantes (como un flare).
+
+---
+
+## Meeting 4 - 2024-12-13
