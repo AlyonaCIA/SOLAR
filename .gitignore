@@ -151,3 +151,4 @@ cython_debug/
 *.iml
 .idea/
 src/data_prep/sdo_data
+Data/
