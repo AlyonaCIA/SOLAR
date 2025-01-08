@@ -134,8 +134,6 @@ Estos artículos fueron añadidos para:
 
 ---
 
-# Meeting Notes
-
 ## Meeting 3 - 2024-11-01
 
 **Participants:** Alyona Carolina Ivanova Araujo, Carlos José Díaz Baso, Juan C Guevara G.
@@ -207,17 +205,11 @@ Estos artículos fueron añadidos para:
 
 ---
 
-### Archivos Nuevos
-
-Ningún archivo nuevo ha sido añadido aún para esta reunión.
-
 ### Propósito
 
 La discusión de esta reunión busca consolidar la estrategia para definir y detectar anomalías en datos solares multicanal, además de preparar el entorno para manejar datos a mayor escala.
 
 ---
-
-# Meeting Notes
 
 ## Meeting 4 - 2024-12-03
 
@@ -240,4 +232,94 @@ La discusión de esta reunión busca consolidar la estrategia para definir y det
 
 ---
 
-## Meeting 4 - 2024-12-13
+## Meeting 5 - 2024-12-14
+
+**Participants:** Alyona Carolina Ivanova Araujo, Professor Luis Felipe Giraldo Trujillo, Carlos José Díaz Baso, Juan Camilo Guevara mez
+
+### Topics Discussed:
+
+1. **Detección de anomalías en imágenes solares con ruido:**
+
+   - Evaluar si es mejor realizar preprocesamiento para reducir ruido antes o después de la detección de anomalías.
+   - Se propuso el uso de un filtro gaussiano como preprocesamiento para suavizar las imágenes.
+   - Acordamos explorar dos enfoques:
+     - Preprocesar las imágenes antes de la detección.
+     - Detectar anomalías en imágenes sin preprocesar y aplicar postprocesamiento.
+
+2. **Técnicas de preprocesamiento:**
+
+   - Uso de convoluciones para reducir ruido antes de la detección de anomalías.
+   - Probar diferentes métodos para comparar su efectividad.
+
+3. **Definición de features para modelos de detección de anomalías:**
+
+   - Usar la posición relativa al centro del sol como feature adicional.
+   - Considerar la intensidad del píxel como un factor relevante.
+   - Investigar y evaluar otras posibles features como textura, bordes y varianza local.
+
+4. **Organización del trabajo:**
+
+   - Crear notebooks separados para experimentar con preprocesamiento y detección de anomalías.
+   - Diseñar experimentos que permitan comparar los resultados de ambos enfoques.
+
+---
+
+### Tasks
+
+#### Notebooks:
+
+1. **Notebook 1:**
+
+   - Explorar diferentes técnicas de convolución para preprocesar las imágenes.
+   - Implementar y evaluar el filtro gaussiano.
+   - Probar otros métodos si es necesario.
+
+2. **Notebook 2:**
+   - Implementar métodos de detección de anomalías en imágenes preprocesadas y sin preprocesar.
+   - Comparar los resultados de ambos enfoques.
+
+#### Features:
+
+1. **Investigación:**
+
+   - Revisar literatura sobre detección de anomalías en imágenes astronómicas.
+   - Identificar posibles features relevantes para el modelo, como:
+     - Posición relativa al centro del sol.
+     - Intensidad del píxel.
+     - Textura y bordes.
+     - Varianza local.
+
+2. **Evaluación de features:**
+
+   - Analizar la relevancia de las features identificadas.
+   - Seleccionar las más útiles para la detección de anomalías.
+
+3. **Implementación:**
+   - Calcular las features seleccionadas para cada píxel.
+   - Incorporar las features al modelo.
+
+#### Comparación de Resultados:
+
+1. **Con y sin preprocesamiento:**
+
+   - Evaluar la efectividad de la detección de anomalías en ambos escenarios.
+   - Generar métricas de comparación para determinar la mejor estrategia.
+
+2. **Análisis de features:**
+   - Comparar la detección de anomalías utilizando diferentes combinaciones de features.
+
+---
+
+### Próximos Pasos
+
+1. Crear y configurar los notebooks para preprocesamiento y detección de anomalías.
+2. Investigar y documentar posibles features adicionales.
+3. Diseñar experimentos para evaluar y comparar enfoques.
+4. Implementar y probar las técnicas discutidas en los datos disponibles.
+5. Analizar resultados y ajustar los métodos según los hallazgos.
+
+---
+
+### Propósito
+
+Consolidar una estrategia robusta para la detección de anomalías en imágenes solares, explorando tanto el impacto del preprocesamiento como el diseño de features relevantes, con el fin de obtener resultados precisos y fiables.
