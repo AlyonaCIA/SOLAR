@@ -150,5 +150,11 @@ cython_debug/
 # Ignore IntelliJ IDEA project files
 *.iml
 .idea/
-src/data_prep/sdo_data
-Data/
+
+# Ignore all into Data file
+data/*
+
+# Ignore all insto
+multichannel_SDO_AIA
+SDO_data/
+SDO_papper
