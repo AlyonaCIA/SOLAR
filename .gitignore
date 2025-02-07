@@ -159,3 +159,6 @@ data/*
 multichannel_SDO_AIA
 SDO_data/
 SDO_papper
+
+# Ignore temporary files
+# tmp/
