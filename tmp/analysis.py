@@ -5,6 +5,8 @@ from skimage.transform import resize
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import RobustScaler
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') 
 from typing import Tuple
 import argparse  # Import argparse for command-line arguments
 from sklearn.cluster import MeanShift, estimate_bandwidth # Import clustering tools
@@ -55,7 +57,7 @@ def preprocess_image(data: np.ndarray, mask: np.ndarray, size: int = 512) -> np.
 
 # --- Modified Functions ---
 
-def prepare_data_concatenated(masked_data_list: list) -> Tuple[np.ndarray, np.ndarray]:
+def prepare_data_concatenated(masked_data_list: list) -> Tuple[np.ndarray, np.ndarray, np.ndarray]: # Modified return type
     """
     Prepares the data for anomaly detection by concatenating channels and normalizing.
 
@@ -63,9 +65,10 @@ def prepare_data_concatenated(masked_data_list: list) -> Tuple[np.ndarray, np.nd
         masked_data_list (list): List of masked image data (2D arrays) for each channel.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray]:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: # Modified return description
             - Data reshaped to (pixels_without_nan, num_channels) and normalized.
-            - A boolean mask indicating the positions of valid (non-NaN) pixels in the original 512x512 grid.
+            - A boolean mask indicating the positions of valid (non-NaN) pixels in the original 512x512 grid (1D reshaped).
+            - The nan_mask (1D boolean array) itself. # ADDED nan_mask to the return
     """
 
     # Stack the masked data along a new axis (channels)
@@ -90,7 +93,7 @@ def prepare_data_concatenated(masked_data_list: list) -> Tuple[np.ndarray, np.nd
     print(f"Shape of reshaped_data_scaled (after scaling): {reshaped_data_scaled.shape}")
 
 
-    return reshaped_data_scaled, ~nan_mask # Return scaled data and the *inverse* of nan_mask (valid pixel mask)
+    return reshaped_data_scaled, ~nan_mask, nan_mask # Return scaled data, valid pixel mask, AND nan_mask
 
 def detect_anomalies_isolation_forest_decision(
     data: np.ndarray,
@@ -110,6 +113,76 @@ def detect_anomalies_isolation_forest_decision(
     anomaly_scores = iso_forest.decision_function(data)  # Get anomaly scores
     print(f"Shape of anomaly_scores: {anomaly_scores.shape}")
     return anomaly_scores
+
+def plot_isolation_forest_anomalies(ax, masked_data, anomaly_mask_channel, channel_name, threshold):
+    """
+    Plots the original image and overlays the anomaly mask from Isolation Forest (pre-clustering).
+
+    Args:
+        ax (plt.Axes): Matplotlib Axes object for plotting.
+        masked_data (np.ndarray): Original masked image data for the channel.
+        anomaly_mask_channel (np.ndarray): Anomaly mask for the CURRENT channel based on Isolation Forest.
+        channel_name (str): Name of the channel.
+        threshold (float): Anomaly threshold used.
+    """
+
+    # Display the original image in grayscale
+    ax.imshow(masked_data, origin='lower', cmap='gray',
+               vmin=np.nanpercentile(masked_data, 2),
+               vmax=np.nanpercentile(masked_data, 98))
+
+    # Overlay the anomaly mask in red
+    ax.imshow(np.ma.masked_where(~anomaly_mask_channel, anomaly_mask_channel), origin='lower', cmap=matplotlib.colors.ListedColormap(['red']), alpha=0.4, vmin=0.5, vmax=1.5) # Red overlay for anomalies
+
+    ax.set_title(f'AIA {channel_name} Å - Isolation Forest Anomalies', color='black', fontsize=12, pad=10)
+    ax.text(0.5, -0.18, f'Anomaly Threshold: {threshold:.2f}', ha='center', va='center', transform=ax.transAxes, fontsize=10, color='dimgray')
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+
+def plot_clustered_anomalies(ax, masked_data, cluster_mask_global, cluster_cmap_global, n_clusters_global, cluster_patches_global, channel_name, threshold):
+    """
+    Plots the original image and overlays GLOBAL cluster mask (only cluster areas colored).
+
+    Args:
+        ax (plt.Axes): Matplotlib Axes object for plotting.
+        masked_data (np.ndarray): Original masked image data for the channel.
+        cluster_mask_global (np.ndarray): GLOBAL cluster mask calculated across all channels.
+        cluster_cmap_global (matplotlib.colors.ListedColormap): Colormap for GLOBAL clusters.
+        n_clusters_global (int): Number of GLOBAL clusters.
+        cluster_patches_global (list): List of legend patches for global clusters.
+        channel_name (str): Name of the channel.
+        threshold (float): Anomaly threshold used.
+    """
+    # Display the original image - now we will OVERLAY clusters on top of this
+    ax.imshow(masked_data, origin='lower', cmap='gray',  # Use gray colormap
+                   vmin=np.nanpercentile(masked_data, 5), # Adjust vmin and vmax for better contrast
+                   vmax=np.nanpercentile(masked_data, 95))
+
+    # Overlay the GLOBAL cluster mask - only color the CLUSTER areas, leave background grayscale
+    if n_clusters_global > 0:
+        # Iterate through each cluster index (1, 2, 3...)
+        for cluster_index in range(1, n_clusters_global + 1):
+            cluster_area_mask = cluster_mask_global == cluster_index # Mask for pixels belonging to THIS cluster
+            cluster_color = cluster_cmap_global((cluster_index - 1) / n_clusters_global) # Get color for this cluster
+            ax.imshow(np.ma.masked_where(~cluster_area_mask, cluster_mask_global), origin='lower', cmap=matplotlib.colors.ListedColormap([cluster_color]), alpha=0.6, vmin=cluster_index - 0.5, vmax=cluster_index + 0.5) # Overlay ONLY cluster area
+
+    ax.set_title(f'AIA {channel_name} Å - Clustered Anomalies', color='black', fontsize=12, pad=10) # Title with GLOBAL cluster count
+    ax.text(0.5, -0.18, f'Anomaly Threshold: {threshold:.2f}', ha='center', va='center', transform=ax.transAxes, fontsize=10, color='dimgray') # Adjusted subtitle position and fontsize
+
+    ax.set_xticks([]) # Remove x ticks for cleaner visualization
+    ax.set_yticks([]) # Remove y ticks for cleaner visualization
+    ax.spines['top'].set_visible(False) # Remove spines for cleaner look
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+
+    if cluster_patches_global: # Add legend only if there are patches to show
+        ax.legend(handles=cluster_patches_global, loc='upper right', fontsize='small') # Add legend
 
 def plot_comparison_decision(ax, masked_data_list, anomaly_mask_channel, cluster_mask_global, cluster_cmap_global, n_clusters_global, cluster_patches_global, channel_names, threshold, i):
     """
@@ -132,8 +205,8 @@ def plot_comparison_decision(ax, masked_data_list, anomaly_mask_channel, cluster
 
     # Display the original image - now we will OVERLAY clusters on top of this
     ax.imshow(masked_data, origin='lower', cmap='gray',  # Use gray colormap
-                   vmin=np.nanpercentile(masked_data, 5), # Adjust vmin and vmax for better contrast
-                   vmax=np.nanpercentile(masked_data, 95))
+                   vmin=np.nanpercentile(masked_data, 2), # Adjust vmin and vmax for better contrast
+                   vmax=np.nanpercentile(masked_data, 98))
 
     # Overlay the GLOBAL cluster mask - only color the CLUSTER areas, leave background grayscale
     if n_clusters_global > 0:
@@ -192,7 +265,7 @@ if __name__ == "__main__":
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    data_dir = "./sdo_data/"  # Update this path if necessary
+    data_dir = "/mnt/c/Users/juague/Documents/Personal/Other/Alyona/SOLAR_old/tmp/sdo_data"  # Update this path if necessary
     print(f"Data directory is set to: {data_dir}")
     print(f"Contents of data directory: {os.listdir(data_dir)}")
 
@@ -218,7 +291,7 @@ if __name__ == "__main__":
     print(f"Number of channels to process: {num_channels}")
 
     # Parameters
-    image_size = 2048
+    image_size = 512 # Use the actual processed image size, previously was hardcoded to 512, but now is 2048 after resizing to original
     contamination = 0.05  #Adjust this value
 
     #1. Load and Preprocess Images (Do this ONCE outside the threshold loop)
@@ -233,7 +306,7 @@ if __name__ == "__main__":
         data, metadata = load_fits_data(channel_path)
         print(f"Shape of original data for channel {channel}: {data.shape}")
         mask = create_circular_mask(data, metadata)
-        masked_data = preprocess_image(data, mask, image_size)
+        masked_data = preprocess_image(data, mask, image_size) # Use the correct image_size
         print(f"Shape of masked data for channel {channel}: {masked_data.shape}")
         masked_data_list.append(masked_data)
         channel_names.append(channel)
@@ -243,12 +316,12 @@ if __name__ == "__main__":
 
     #2. Prepare data concatenated for Isolation Forest (Do this ONCE outside the threshold loop)
     if masked_data_list: # Check if masked_data_list is not empty before proceeding
-        prepared_data, valid_pixel_mask = prepare_data_concatenated(masked_data_list)
+        prepared_data, valid_pixel_mask, nan_mask = prepare_data_concatenated(masked_data_list)
 
         #3. Detect Anomalies (Do this ONCE outside the threshold loop - anomaly scores are independent of threshold)
         anomaly_scores = detect_anomalies_isolation_forest_decision(prepared_data, contamination)
 
-        # Reshape anomaly scores back to 512x512 for anomaly map creation
+        # Reshape anomaly scores back to 2048x2048 for anomaly map creation (use correct image_size)
         anomaly_map_2d = np.full((image_size, image_size), np.nan)
         anomaly_map_2d[valid_pixel_mask.reshape((image_size, image_size))] = anomaly_scores
 
@@ -265,33 +338,62 @@ if __name__ == "__main__":
             cluster_cmap_global = matplotlib.colors.ListedColormap([]) # Initialize GLOBAL colormap
 
             if len(anomaly_pixels_indices_global) > 0: # Only cluster if there are GLOBAL anomalies
-                anomaly_pixels_coords_global = anomaly_pixels_indices_global
+                # --- MODIFICATION START ---
+                # 1. Create a mapping from 2D pixel indices to prepared_data row indices
+                valid_pixel_mask_2d = ~nan_mask.reshape((image_size, image_size))
+                valid_pixel_indices_2d = np.argwhere(valid_pixel_mask_2d) # Get 2D indices of valid pixels
+                pixel_index_map = {} # Dictionary to map 2D index to prepared_data row index
+                for i, index_2d in enumerate(valid_pixel_indices_2d):
+                    pixel_index_map[tuple(index_2d)] = i # Map (row, col) to row index in prepared_data
 
-                # Estimate bandwidth for MeanShift (important parameter)
-                bandwidth_global = estimate_bandwidth(anomaly_pixels_coords_global, quantile=bandwidth_quantile, n_samples=min(500, len(anomaly_pixels_coords_global))) # Use quantile from argument
+                # 2. Extract intensity features for anomalous pixels using the index map
+                anomaly_intensity_features = []
+                valid_anomaly_pixel_indices_global = [] # Keep track of anomaly pixels that are actually in prepared_data
+                for anomaly_pixel_index_2d in anomaly_pixels_indices_global:
+                    if tuple(anomaly_pixel_index_2d) in pixel_index_map: # Check if anomaly pixel is in valid pixel set
+                        prepared_data_row_index = pixel_index_map[tuple(anomaly_pixel_index_2d)]
+                        anomaly_intensity_features.append(prepared_data[prepared_data_row_index])
+                        valid_anomaly_pixel_indices_global.append(anomaly_pixel_index_2d) # Store valid anomaly pixel indices
 
-                if bandwidth_global > 0: # Bandwidth must be positive for MeanShift
-                    ms_global = MeanShift(bandwidth=bandwidth_global, bin_seeding=True)
-                    ms_global.fit(anomaly_pixels_coords_global)
-                    labels_global = ms_global.labels_
-                    cluster_labels_global = np.unique(labels_global)
-                    n_clusters_global = len(cluster_labels_global)
-                    print(f"  Global Clustering (Threshold {anomaly_threshold:.2f}, Quantile {bandwidth_quantile}): Estimated {n_clusters_global} clusters, Bandwidth: {bandwidth_global:.2f}") # Print bandwidth
+                anomaly_intensity_features = np.array(anomaly_intensity_features) # Convert to numpy array
+                valid_anomaly_pixel_indices_global = np.array(valid_anomaly_pixel_indices_global) # Convert to numpy array
 
-                    # Create a colormap for GLOBAL clusters
-                    cluster_cmap_global = matplotlib.colors.ListedColormap(plt.cm.viridis(np.linspace(0, 1, n_clusters_global))) # Use viridis, can change
 
-                    for cluster_idx in range(n_clusters_global):
-                        cluster_pixels = anomaly_pixels_coords_global[labels_global == cluster_idx]
-                        if len(cluster_pixels) > 0:
-                            cluster_mask_global[tuple(cluster_pixels.T)] = cluster_idx + 1
-                            cluster_color = cluster_cmap_global(cluster_idx / n_clusters_global)
-                            cluster_patches_global.append(mpatches.Patch(color=cluster_color, label=f'Cluster {cluster_idx+1}'))
+                if anomaly_intensity_features.size > 0: # Proceed only if there are valid anomaly pixels after NaN removal
 
-                else: # Bandwidth too small for GLOBAL clustering
-                    print(f"  Global Clustering (Threshold {anomaly_threshold:.2f}, Quantile {bandwidth_quantile}): Bandwidth too small, no global clusters estimated.")
-                    cluster_cmap_global = matplotlib.colors.ListedColormap(['Reds']) # Fallback colormap
-                    cluster_patches_global.append(mpatches.Patch(color='red', label='Global Anomalies (No Clusters)'))
+                    # Estimate bandwidth for MeanShift based on INTENSITY FEATURES
+                    bandwidth_global = estimate_bandwidth(anomaly_intensity_features, quantile=bandwidth_quantile, n_samples=min(500, len(anomaly_intensity_features))) # Use intensity features
+
+                    if bandwidth_global > 0: # Bandwidth must be positive for MeanShift
+                        ms_global = MeanShift(bandwidth=bandwidth_global, bin_seeding=True)
+                        ms_global.fit(anomaly_intensity_features) # FIT on INTENSITY FEATURES
+                        labels_global = ms_global.labels_
+                        cluster_labels_global = np.unique(labels_global)
+                        n_clusters_global = len(cluster_labels_global)
+                        print(f"  Global Clustering (Threshold {anomaly_threshold:.2f}, Quantile {bandwidth_quantile}): Estimated {n_clusters_global} clusters, Bandwidth: {bandwidth_global:.2f}") # Print bandwidth
+
+                        # Create a colormap for GLOBAL clusters
+                        cluster_cmap_global = matplotlib.colors.ListedColormap(plt.cm.tab20(np.linspace(0, 1, n_clusters_global))) # Use tab10 instead of viridis
+
+                        cluster_mask_global = np.zeros_like(anomaly_mask_global, dtype=int) # Reset cluster mask here to ensure correct size
+
+                        for cluster_idx in range(n_clusters_global):
+                            # Get pixel indices for pixels belonging to this intensity cluster
+                            cluster_intensity_indices_in_anomaly = np.argwhere(labels_global == cluster_idx).flatten() # Indices in anomaly_intensity_features
+                            cluster_pixels_indices = valid_anomaly_pixel_indices_global[cluster_intensity_indices_in_anomaly] # Get the actual pixel indices from valid anomaly pixel set
+
+                            if len(cluster_pixels_indices) > 0:
+                                cluster_mask_global[tuple(cluster_pixels_indices.T)] = cluster_idx + 1 # Assign cluster label in pixel space
+                                cluster_color = cluster_cmap_global(cluster_idx / n_clusters_global)
+                                cluster_patches_global.append(mpatches.Patch(color=cluster_color, label=f'Cluster {cluster_idx+1}'))
+
+                    else: # Bandwidth too small for GLOBAL clustering
+                        print(f"  Global Clustering (Threshold {anomaly_threshold:.2f}, Quantile {bandwidth_quantile}): Bandwidth too small, no global clusters estimated.")
+                        cluster_cmap_global = matplotlib.colors.ListedColormap(['Reds']) # Fallback colormap
+                        cluster_patches_global.append(mpatches.Patch(color='red', label='Global Anomalies (No Clusters)'))
+                else:
+                    print(f"  Global Clustering (Threshold {anomaly_threshold:.2f}, Quantile {bandwidth_quantile}): No valid anomaly pixels after NaN removal. No clustering performed.")
+                    cluster_patches_global.append(mpatches.Patch(color='none', label='No Valid Global Anomalies for Clustering'))
 
 
             else: # No GLOBAL anomalies
