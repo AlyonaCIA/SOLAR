@@ -163,3 +163,4 @@ SDO_papper
 
 # Ignore temporary files
 # tmp/
+/sdo_data
