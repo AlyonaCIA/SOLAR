@@ -153,11 +153,9 @@ cython_debug/
 .idea/
 
 # Ignore all into Data file
-data/*
+Data/*
 
 # Ignore all insto
-multichannel_SDO_AIA
-SDO_data/
 SDO_papper
 *.tar
 
