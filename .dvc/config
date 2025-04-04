@@ -1,0 +1,4 @@
+[core]
+    remote = onedrive-remote
+['remote "onedrive-remote"']
+    url = /Users/camilomat/Library/CloudStorage/OneDrive-Universidaddelosandes/Proyecto Final/proyecto-final-solar/sdo_data
