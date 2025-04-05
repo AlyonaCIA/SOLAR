@@ -102,8 +102,6 @@ ls ./sdo_data/
 ```
 
 
-
-
 # 📦 Proyecto SOLAR - Acceso a Datos con DVC y GCP / SOLAR Project - Accessing Data with DVC and GCP
 
 Este documento describe los pasos necesarios para clonar este repositorio, instalar sus dependencias y acceder a los datos versionados usando DVC con almacenamiento en Google Cloud Platform (GCP).
@@ -152,9 +150,12 @@ pip install "dvc[gcs]"
 
 ## 4. Configurar el Acceso a GCP / Configure Access to GCP
 
-### 🔐 Opción A: Cuenta de Servicio / Service Account (recommended for controlled environments)
+### 🔐 Cuenta de Servicio / Service Account (Recomendado / Recommended)
 
-1. Obtén el archivo `.json` con las credenciales de la cuenta de servicio.
+El acceso a los datos está restringido al uso exclusivo de una cuenta de servicio.  
+Access to the data is restricted to using a service account only.
+
+1. Obtén el archivo `.json` con las credenciales de la cuenta de servicio.  
    Get the `.json` file with service account credentials.
 
 2. Exporta la variable de entorno / Export the environment variable:
@@ -163,57 +164,53 @@ pip install "dvc[gcs]"
 export GOOGLE_APPLICATION_CREDENTIALS="/ruta/a/tu/credenciales.json"
 ```
 
-### 🔓 Opción B: Usar tu cuenta personal con gcloud / Use your personal account with gcloud
+Asegúrate de que tus compañeros tengan el archivo `.json` y que su cuenta de servicio tenga al menos el rol:  
+Make sure your teammates have the `.json` file and that the service account has at least the role:  
 
-1. Asegúrate de tener el SDK de GCP instalado. / Ensure you have the GCP SDK installed.
+- `roles/storage.objectViewer`
 
-2. Ejecuta / Run:
-
-```bash
-gcloud auth application-default login
-```
-
-Esto abrirá una ventana del navegador para autenticarte. / This will open a browser window to authenticate.
+> ✅ No es necesario usar `gcloud auth`, ya que el acceso se realiza exclusivamente mediante la cuenta de servicio.  
+> ✅ `gcloud auth` is not necessary, since access is handled exclusively via the service account.
 
 ---
 
 ## 5. Descargar los Datos con DVC / Download Data with DVC
 
-Una vez autenticado y con el entorno activado, ejecuta:
+Una vez autenticado y con el entorno activado, ejecuta:  
 Once authenticated and with the virtual environment activated, run:
 
 ```bash
 dvc pull
 ```
 
-Esto descargará todos los archivos de datos versionados desde el bucket de GCP a sus ubicaciones originales dentro del proyecto.
+Esto descargará todos los archivos de datos versionados desde el bucket de GCP a sus ubicaciones originales dentro del proyecto.  
 This will download all versioned data files from the GCP bucket to their original locations in the project.
 
 ---
 
 ## 6. Verificar los Archivos Descargados / Verify Downloaded Files
 
-Puedes revisar el contenido de los directorios de datos, por ejemplo:
+Puedes revisar el contenido de los directorios de datos, por ejemplo:  
 You can check the contents of the data directories, for example:
 
 ```bash
 ls ./sdo_data/
 ```
 
-Esto debería mostrar subdirectorios como `dia_1600` y `dia_1700`, dependiendo de cómo esté estructurado el dataset.
+Esto debería mostrar subdirectorios como `dia_1600` y `dia_1700`, dependiendo de cómo esté estructurado el dataset.  
 This should show subdirectories like `dia_1600` and `dia_1700`, depending on the dataset structure.
 
 ---
 
 ## 💡 Notas Adicionales / Additional Notes
 
-- **Nunca subas archivos de credenciales `.json` al repositorio.** Añádelos a tu `.gitignore`.
+- **Nunca subas archivos de credenciales `.json` al repositorio.** Añádelos a tu `.gitignore`.  
   **Never upload `.json` credential files to the repository.** Add them to your `.gitignore`.
 
-- Asegúrate de que el bucket GCS esté configurado correctamente con los permisos adecuados para lectura.
+- Asegúrate de que el bucket GCS esté configurado correctamente con los permisos adecuados para lectura.  
   Ensure that the GCS bucket is properly configured with appropriate read permissions.
 
-- Puedes añadir más remotos o cambiar el remoto por defecto usando `dvc remote`.
+- Puedes añadir más remotos o cambiar el remoto por defecto usando `dvc remote`.  
   You can add more remotes or change the default remote using `dvc remote`.
 
 
