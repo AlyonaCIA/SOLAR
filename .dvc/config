@@ -1,4 +1,6 @@
 [core]
-    remote = onedrive-remote
+    remote = gcp-remote
 ['remote "onedrive-remote"']
     url = /Users/camilomat/Library/CloudStorage/OneDrive-Universidaddelosandes/Proyecto Final/proyecto-final-solar/sdo_data
+['remote "gcp-remote"']
+    url = gs://solar-proyect-2024
