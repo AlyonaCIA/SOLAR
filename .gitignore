@@ -162,3 +162,6 @@ SDO_papper
 # Ignore temporary files
 # tmp/
 /sdo_data
+config/dvc_key.json
+/src/data_prep/src/data_prep
+/src/data_prep/sdo_data
