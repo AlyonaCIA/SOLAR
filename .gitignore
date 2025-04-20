@@ -166,3 +166,4 @@ config/dvc_key.json
 /src/data_prep/src/data_prep
 /src/data_prep/sdo_data
 API/tests/sdo_data/
+API/tests/testing_input/

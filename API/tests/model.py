@@ -6,11 +6,13 @@ from sklearn.ensemble import IsolationForest
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.patches as mpatches
+
 matplotlib.use('Agg')
 
 
 def detect_anomalies_isolation_forest(
-    data: np.ndarray, contamination: float
+    data: np.ndarray, contamination: float, image_size:int,valid_pixel_mask: np.ndarray
 ) -> np.ndarray:
     """
     Detects anomalies using Isolation Forest and returns anomaly scores.
@@ -21,17 +23,24 @@ def detect_anomalies_isolation_forest(
         Input data for anomaly detection of shape (n_samples, n_features).
     contamination : float
         The proportion of anomalies in the data.
+    image_size : int
+        Size of the image (height and width) to reshape the output.
 
     Returns
     -------
-    np.ndarray
-        Anomaly scores. Lower scores indicate higher anomaly likelihood.
+    anomaly_map: np.ndarray
+        2D array of shape (image_size, image_size) with anomaly scores.
     """
     iso_forest = IsolationForest(
         contamination=contamination, random_state=42
     )
     iso_forest.fit(data)
-    return iso_forest.decision_function(data)
+
+    anomaly_scores = iso_forest.decision_function(data)
+    anomaly_map = np.full((image_size, image_size), np.nan)
+    anomaly_map[valid_pixel_mask.reshape(image_size, image_size)] = anomaly_scores
+
+    return anomaly_map
 
 
 def perform_kmeans_clustering(
