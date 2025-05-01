@@ -7,9 +7,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.ensemble import IsolationForest
+import matplotlib
 
 # Import refactored modules
-from . import utils
+from src import utils
 
 # Configure logging for the module
 # Consider using a more sophisticated logging setup
