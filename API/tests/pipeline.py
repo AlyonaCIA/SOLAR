@@ -1,10 +1,12 @@
 import os
-import numpy as np
-import matplotlib
 
+import matplotlib
+import numpy as np
 from data_loader import load_fits_data
-from preprocess import create_circular_mask, preprocess_image, prepare_data_concatenated
-from model import detect_anomalies_isolation_forest, perform_kmeans_clustering, create_cluster_mask
+from model import (create_cluster_mask, detect_anomalies_isolation_forest,
+                   perform_kmeans_clustering)
+from preprocess import (create_circular_mask, prepare_data_concatenated,
+                        preprocess_image)
 from visualization import plot_results
 
 # --- Configuration ---
@@ -20,14 +22,15 @@ config = {
     "random_state": 42
 }
 
+
 def run_pipeline(config):
-    """
-    Runs the entire pipeline for anomaly detection and clustering on solar image data.
+    """Runs the entire pipeline for anomaly detection and clustering on solar image
+    data.
 
     Args:
-        config (dict): A dictionary containing configuration settings, including data directory, 
-                       channels, anomaly thresholds, and other parameters for clustering and 
-                       anomaly detection.
+        config (dict): A dictionary containing configuration settings, including data
+        directory,channels, anomaly thresholds, and other parameters for clustering and
+        anomaly detection.
 
     Returns:
         None: The function saves the results as output files in the specified directory.
@@ -73,13 +76,16 @@ def run_pipeline(config):
         return
 
     # --- 3. Prepare data for anomaly detection ---
-    prepared_data, valid_pixel_mask, nan_mask = prepare_data_concatenated(masked_data_list)
+    prepared_data, valid_pixel_mask, nan_mask = prepare_data_concatenated(
+        masked_data_list)
 
     # --- 4. Anomaly detection with Isolation Forest ---
-    anomaly_scores = detect_anomalies_isolation_forest(prepared_data, config["contamination"])
+    anomaly_scores = detect_anomalies_isolation_forest(
+        prepared_data, config["contamination"])
 
     anomaly_map = np.full((config["image_size"], config["image_size"]), np.nan)
-    anomaly_map[valid_pixel_mask.reshape(config["image_size"], config["image_size"])] = anomaly_scores
+    anomaly_map[valid_pixel_mask.reshape(
+        config["image_size"], config["image_size"])] = anomaly_scores
 
     # --- 5. Anomaly thresholding and clustering ---
     for threshold in config["anomaly_thresholds"]:
@@ -88,7 +94,8 @@ def run_pipeline(config):
         print(f"Anomalies detected: {np.sum(anomaly_mask)}")
 
         anomaly_indices = np.argwhere(anomaly_mask)
-        valid_indices = np.argwhere(~nan_mask.reshape((config["image_size"], config["image_size"])))
+        valid_indices = np.argwhere(~nan_mask.reshape(
+            (config["image_size"], config["image_size"])))
         index_map = {tuple(idx): i for i, idx in enumerate(valid_indices)}
 
         features = []
@@ -110,7 +117,10 @@ def run_pipeline(config):
                 random_state=config["random_state"]
             )
 
-            cluster_mask, cluster_cmap, cluster_patches, n_clusters = create_cluster_mask(
+            cluster_mask,  # noqa: F821
+            cluster_cmap,  # noqa: F821
+            cluster_patches,  # noqa: F821
+            n_clusters = create_cluster_mask(
                 anomaly_mask,
                 cluster_labels,
                 valid_pixel_mask,
@@ -134,6 +144,7 @@ def run_pipeline(config):
             threshold,
             config["output_dir"]
         )
+
 
 # --- Run pipeline ---
 if __name__ == "__main__":

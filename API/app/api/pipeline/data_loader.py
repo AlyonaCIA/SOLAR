@@ -1,6 +1,6 @@
 import os
 import re
-from typing import List, Tuple, Set, Union
+from typing import List, Set, Tuple, Union
 
 import numpy as np
 import sunpy.map
@@ -12,13 +12,14 @@ def load_masked_channel_data(
     image_size: Union[int, Tuple[int, int]],
     excluded_channels: Set[int] = {1600, 1700}
 ) -> Tuple[List[np.ndarray], List[str], List[str]]:
-    """
-    Detect valid AIA channels from FITS filenames in the given directory, and load and preprocess the corresponding image data.
+    """Detect valid AIA channels from FITS filenames in the given directory, and load
+    and preprocess the corresponding image data.
 
     Parameters:
         data_dir (str): Directory containing the .image.fits files.
         image_size (int or tuple): Target size for resizing the images.
-        excluded_channels (Set[int], optional): Set of channel numbers to exclude from processing.
+        excluded_channels (Set[int], optional): Set of channel numbers to exclude
+        from processing.
 
     Returns:
         Tuple[List[np.ndarray], List[str], List[str]]:
@@ -64,8 +65,7 @@ def load_masked_channel_data(
 
 
 def create_circular_mask(image: np.ndarray, metadata: dict) -> np.ndarray:
-    """
-    Generate a circular mask for the solar disk using FITS metadata.
+    """Generate a circular mask for the solar disk using FITS metadata.
 
     Parameters:
         image (np.ndarray): 2D array of image data.
@@ -90,8 +90,8 @@ def preprocess_image(
     mask: np.ndarray,
     output_size: Union[int, Tuple[int, int]] = 512
 ) -> np.ndarray:
-    """
-    Resize an image to the desired shape and apply a mask, replacing masked regions with NaNs.
+    """Resize an image to the desired shape and apply a mask, replacing masked regions
+    with NaNs.
 
     Parameters:
         image (np.ndarray): 2D input image array.

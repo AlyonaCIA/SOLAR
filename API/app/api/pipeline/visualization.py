@@ -1,7 +1,8 @@
 import os
-import numpy as np
-import matplotlib.pyplot as plt
+
 import matplotlib.colors
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def plot_results(
@@ -14,8 +15,7 @@ def plot_results(
     anomaly_threshold: float,
     output_dir: str
 ):
-    """
-    Plots and saves the results, overlaying global clusters on each channel.
+    """Plots and saves the results, overlaying global clusters on each channel.
 
     Args:
         masked_data_list (list): List of masked image data arrays.
@@ -28,7 +28,8 @@ def plot_results(
         output_dir (str): Directory to save the output figure.
 
     Returns:
-        None: The function saves the results as an image file in the specified directory.
+        None: The function saves the results as an image file in the specified
+        directory.
     """
     num_rows, num_cols = 3, 3
     fig, axes = plt.subplots(

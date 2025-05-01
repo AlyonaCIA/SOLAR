@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sunpy.map
 from skimage.transform import resize
-from sklearn.cluster import KMeans
+from sklearn.cluster import \
+    MiniBatchKMeans  # Changed from KMeans to MiniBatchKMeans
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import RobustScaler
 
@@ -67,27 +68,32 @@ def create_circular_mask(data: np.ndarray, metadata: dict) -> np.ndarray:
 
 
 def preprocess_image(
-    data: np.ndarray, mask: np.ndarray, size: int = 512
+    data: np.ndarray, mask: np.ndarray, size: int = None
 ) -> np.ndarray:
     """Resizes the image and applies the mask, setting masked areas to NaN.
 
     Args:
         data (np.ndarray): Input image data.
         mask (np.ndarray): Boolean mask for the solar disk.
-        size (int): Desired size of the resized image (default: 512).
+        size (int, optional): Desired size of the resized image. If None, no resize. Defaults to None.
 
     Returns:
         np.ndarray: Preprocessed image data with mask applied and resized.
     """
-    resized_data = resize(
-        data, (size, size), mode='reflect', anti_aliasing=True
-    )
-    resized_mask = resize(
-        mask, (size, size), mode='reflect', anti_aliasing=False
-    ) > 0.5
-    masked_data = resized_data.copy()
-    masked_data[~resized_mask] = np.nan  # Apply mask
-    return masked_data
+    if size is not None:
+        resized_data = resize(
+            data, (size, size), mode='reflect', anti_aliasing=True
+        )
+        resized_mask = resize(
+            mask, (size, size), mode='reflect', anti_aliasing=False
+        ) > 0.5
+        masked_data = resized_data.copy()
+        masked_data[~resized_mask] = np.nan  # Apply mask
+        return masked_data
+    else:
+        masked_data = data.copy()
+        masked_data[~mask] = np.nan  # Apply original mask
+        return masked_data
 
 
 # --- Data Preparation and Anomaly Detection ---
@@ -121,30 +127,32 @@ def prepare_data_concatenated(
 
 
 def detect_anomalies_isolation_forest(
-    data: np.ndarray, contamination: float
+    data: np.ndarray, contamination: float, random_state: int
 ) -> np.ndarray:
     """Detects anomalies using Isolation Forest and returns anomaly scores.
 
     Args:
         data (np.ndarray): Input data for anomaly detection.
         contamination (float): Expected proportion of anomalies in the data.
+        random_state (int): Random seed for reproducibility. # Added random_state
 
     Returns:
         np.ndarray: Anomaly scores for each data point.
                      Lower scores indicate higher anomaly.
     """
     iso_forest = IsolationForest(
-        contamination=contamination, random_state=42
+        contamination=contamination, random_state=random_state  # Use random_state here
     )
     iso_forest.fit(data)
     return iso_forest.decision_function(data)  # Return anomaly *scores*
 
 
 # --- Clustering ---
-def perform_kmeans_clustering(
+def perform_kmeans_clustering(  # Function name remains the same but now uses MiniBatchKMeans
     data: np.ndarray, n_clusters: int, random_state: int = 42
 ) -> Tuple[np.ndarray, float]:
-    """Performs K-Means clustering.
+    """Performs MiniBatch K-Means clustering. # Updated docstring to reflect
+    MiniBatchKMeans.
 
     Args:
         data (np.ndarray): Data to be clustered.
@@ -156,11 +164,12 @@ def perform_kmeans_clustering(
             - labels: Cluster labels for each data point.
             - inertia: Sum of squared distances to closest centroid.
     """
-    kmeans = KMeans(
+    kmeans = MiniBatchKMeans(  # Changed KMeans to MiniBatchKMeans
         n_clusters=n_clusters,
         random_state=random_state,
-        n_init=20
-    )  # Use n_init for multiple initializations
+        n_init=10,  # Reduced n_init for MiniBatchKMeans as it's faster
+        batch_size=256  # Added batch_size for MiniBatchKMeans
+    )
     kmeans.fit(data)
     return kmeans.labels_, kmeans.inertia_
 
@@ -207,7 +216,7 @@ def create_cluster_mask(
     anomaly_mask: np.ndarray,
     labels: np.ndarray,
     valid_pixel_mask: np.ndarray,
-    image_size: int
+    image_size: int  # image_size is still passed but not strictly used anymore
 ) -> Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
     """Creates a 2D cluster mask from anomaly mask and cluster labels.
 
@@ -215,7 +224,7 @@ def create_cluster_mask(
         anomaly_mask (np.ndarray): 2D boolean mask of anomaly pixels.
         labels (np.ndarray): Cluster labels for each anomaly pixel.
         valid_pixel_mask (np.ndarray): 1D boolean mask of valid pixels.
-        image_size (int): Size of the image (height/width).
+        image_size (int): Size of the image (height/width). - Not strictly used anymore, derived from anomaly_mask
 
     Returns:
         Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
@@ -248,7 +257,9 @@ def create_cluster_mask(
         )
 
         # Create 2D masks for easier indexing
-        valid_pixel_mask_2d = valid_pixel_mask.reshape((image_size, image_size))
+        current_image_size = anomaly_mask.shape[0]  # Get image size from anomaly mask
+        valid_pixel_mask_2d = valid_pixel_mask.reshape(
+            (current_image_size, current_image_size))
         anomaly_pixels_indices = np.argwhere(anomaly_mask)  # 2D anomaly indices
         print(f"len(anomaly_pixels_indices): {len(anomaly_pixels_indices)}")
         # Should be same as np.sum(anomaly_mask)
@@ -302,7 +313,11 @@ def plot_results(
     cluster_patches_global: list,
     channel_names: list,
     anomaly_threshold: float,
-    output_dir: str
+    output_dir: str,
+    total_pixels: int,  # Added total_pixels
+    anomaly_pixels_count: int,  # Added anomaly_pixels_count
+    # Added clustering_method_name with default "K-Means"
+    clustering_method_name: str = "K-Means"
 ):
     """Plots and saves the results, overlaying global clusters on each channel.
 
@@ -314,7 +329,10 @@ def plot_results(
         cluster_patches_global (list): Legend patches for global clusters.
         channel_names (list): List of channel names (wavelengths).
         anomaly_threshold (float): Anomaly threshold used.
-        output_dir (str): Directory to save the output figure.
+        output_dir (str): Directory to save output figures.
+        total_pixels (int): Total number of pixels in the image. # Added
+        anomaly_pixels_count (int): Number of anomaly pixels detected. # Added
+        clustering_method_name (str): Name of the clustering method used. # Added
     """
     num_rows, num_cols = 3, 3
     fig, axes = plt.subplots(
@@ -322,9 +340,14 @@ def plot_results(
     )
     axes = axes.flatten()
 
+    anomaly_percentage = (anomaly_pixels_count / total_pixels) * \
+        100 if total_pixels > 0 else 0  # Calculate percentage
     fig.suptitle(
-        f'Anomaly Detection in SDO/AIA EUV Channels (K-Means)\n'
-        f'Anomaly Threshold: {anomaly_threshold:.2f}',
+        # Added clustering method name to title
+        f'Anomaly Detection in SDO/AIA EUV Channels ({clustering_method_name})\n'
+        f'Anomaly Threshold: {anomaly_threshold:.2f} | '
+        f'Anomalous Pixels: {anomaly_pixels_count} / {total_pixels} '
+        f'({anomaly_percentage:.2f}%)',  # Added anomaly info to title
         fontsize=18
     )
 
@@ -401,7 +424,8 @@ def plot_results(
 
     filename = os.path.join(
         output_dir,
-        f"kmeans_anomaly_detection_threshold_{anomaly_threshold:.2f}"
+        f"minibatch_kmeans_anomaly_detection_threshold_{
+            anomaly_threshold:.2f}"  # Changed filename to minibatch_kmeans
         "_global_clusters.png"
     )
     plt.savefig(filename, bbox_inches='tight')
@@ -414,12 +438,12 @@ def main():
     """Main function to execute SDO/AIA anomaly detection pipeline."""
     parser = argparse.ArgumentParser(
         description="SDO/AIA Anomaly Detection using Isolation Forest"
-        " and K-Means Clustering"
+        " and MiniBatch K-Means Clustering"  # Updated description
     )
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="src/Data/sdo_data",  # Changed default path here
+        default="Data/sdo_data",  # Changed default path here
         help="Path to the directory containing SDO/AIA data."
     )
     parser.add_argument(
@@ -447,7 +471,7 @@ def main():
         "--image_size",
         type=int,
         default=512,
-        help="Size to resize images to."
+        help="Size to resize images to. Ignored if --no_resize is used."
     )
     parser.add_argument(
         "--contamination",
@@ -473,6 +497,11 @@ def main():
         default=42,
         help="Random seed for reproducibility"
     )
+    parser.add_argument(
+        "--no_resize",
+        action='store_true',
+        help="Do not resize images, use original size."
+    )
 
     args = parser.parse_args()
 
@@ -497,6 +526,12 @@ def main():
     # --- 2. Load and Preprocess Data for All Channels ---
     masked_data_list = []
     channel_names = []
+    # Determine size, None if no_resize
+    image_size_for_processing = args.image_size if not args.no_resize else None
+    # Initialize, will be updated if no_resize
+    current_image_size = args.image_size if not args.no_resize else None
+    original_image_size = None  # To store original image size if not resizing
+
     for channel_dir in channels:
         try:
             channel = channel_dir.split("_")[1]
@@ -505,9 +540,12 @@ def main():
             data, metadata = load_fits_data(channel_path)
             mask = create_circular_mask(data, metadata)
             masked_data = preprocess_image(
-                data, mask, args.image_size
+                data, mask, image_size_for_processing  # Pass size, can be None
             )
             masked_data_list.append(masked_data)
+            if args.no_resize:
+                # Update to original size if no resize
+                current_image_size = data.shape[0]
         except Exception as e:
             print(f"Error processing {channel_dir}: {e}")
 
@@ -522,28 +560,32 @@ def main():
 
     # --- 4. Anomaly Detection (One-time calculation) ---
     anomaly_scores = detect_anomalies_isolation_forest(
-        prepared_data, args.contamination
+        prepared_data, args.contamination, args.random_state
     )
 
     # Create a 2D anomaly map (for visualization)
-    anomaly_map_2d = np.full((args.image_size, args.image_size), np.nan)
-    anomaly_map_2d[
-        valid_pixel_mask.reshape((args.image_size, args.image_size))
-    ] = anomaly_scores
+    # Use current_image_size
+    anomaly_map_2d = np.full((current_image_size, current_image_size), np.nan)
+    valid_pixel_mask_2d_reshaped = valid_pixel_mask.reshape(
+        (current_image_size, current_image_size))  # Use current_image_size
+    anomaly_map_2d[valid_pixel_mask_2d_reshaped] = anomaly_scores
 
     # --- 5. Loop Through Anomaly Thresholds ---
     for anomaly_threshold in args.anomaly_thresholds:
         print(f"Processing with anomaly threshold: {anomaly_threshold}")
         anomaly_mask_global = anomaly_map_2d < anomaly_threshold
         # Global anomaly mask
-        print(f"np.sum(anomaly_mask_global) in main loop:"
-              f" {np.sum(anomaly_mask_global)}")  # add
+        anomaly_pixels_count = np.sum(anomaly_mask_global)  # Count anomaly pixels
+        total_pixels = current_image_size * current_image_size  # Calculate total pixels
+        print(f"np.sum(anomaly_mask_global) in main loop: {anomaly_pixels_count}")
+        print(f"Total pixels in image: {total_pixels}")
 
-        # --- 6. Clustering (K-Means) ---
+        # --- 6. Clustering (MiniBatch K-Means) --- # Changed comment to reflect MiniBatchKMeans
         anomaly_pixels_indices = np.argwhere(anomaly_mask_global)
 
         # Map anomaly pixel indices to rows in prepared data (critical step)
-        valid_pixel_mask_2d = ~nan_mask.reshape((args.image_size, args.image_size))
+        valid_pixel_mask_2d = ~nan_mask.reshape(
+            (current_image_size, current_image_size))  # Use current_image_size
         valid_pixel_indices_2d = np.argwhere(valid_pixel_mask_2d)
         pixel_index_map = {
             tuple(index_2d): i for i, index_2d in enumerate(valid_pixel_indices_2d)
@@ -568,11 +610,12 @@ def main():
             n_clusters_to_use = args.n_clusters  # Use n_clusters (default 7)
             print(f"Using user-specified n_clusters = {n_clusters_to_use}")
 
-            # Perform K-Means Clustering
-            cluster_labels, _ = perform_kmeans_clustering(
+            # Perform MiniBatch K-Means Clustering # Changed comment to reflect
+            # MiniBatchKMeans
+            cluster_labels, _ = perform_kmeans_clustering(  # Function name is still perform_kmeans_clustering but now uses MiniBatchKMeans
                 anomaly_intensity_features,
                 n_clusters_to_use,
-                random_state=args.random_state
+                args.random_state
             )
 
             # Create cluster mask, colormap, and legend patches
@@ -581,7 +624,7 @@ def main():
                     anomaly_mask_global,
                     cluster_labels,
                     valid_pixel_mask,
-                    args.image_size
+                    current_image_size  # Pass current image size
                 )
 
         else:  # Handle case where no anomalies are detected
@@ -602,7 +645,11 @@ def main():
             cluster_patches_global,
             channel_names,
             anomaly_threshold,
-            args.output_dir
+            args.output_dir,
+            total_pixels,  # Pass total pixels
+            anomaly_pixels_count,  # Pass anomaly pixel count
+            # Added clustering_method_name for plot title
+            clustering_method_name="MiniBatch K-Means"
         )
 
 
