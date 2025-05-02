@@ -22,8 +22,7 @@ from src.solar.pipeline import SolarAnomalyPipeline
 # --- Fixture para configurar el entorno de prueba ---
 @pytest.fixture
 def solar_pipeline_fixture(tmp_path):
-    """
-    Sets up a temporary environment for testing SolarAnomalyPipeline.
+    """Sets up a temporary environment for testing SolarAnomalyPipeline.
 
     - Creates temporary data_dir and output_dir.
     - Copies dummy FITS files into data_dir.
@@ -66,7 +65,7 @@ def solar_pipeline_fixture(tmp_path):
         random_state=42
     )
 
-    # yield permite usar el setup y luego continuar con el teardown 
+    # yield permite usar el setup y luego continuar con el teardown
     # (implícito con tmp_path)
     yield pipeline, output_dir
 
@@ -75,10 +74,8 @@ def solar_pipeline_fixture(tmp_path):
 # --- Tests ---
 
 def test_pipeline_run_successful_execution(solar_pipeline_fixture):
-    """
-    Tests if the pipeline's run() method executes without raising errors
-    and returns a 'success' status with expected structure.
-    """
+    """Tests if the pipeline's run() method executes without raising errors and returns
+    a 'success' status with expected structure."""
     pipeline, output_dir = solar_pipeline_fixture
     thresholds = [0.0, -0.1] # Probar algunos umbrales
 
@@ -128,9 +125,7 @@ def test_pipeline_run_successful_execution(solar_pipeline_fixture):
 
 
 def test_pipeline_run_handles_no_data(tmp_path):
-    """
-    Tests pipeline behavior when the data directory is empty or missing channels.
-    """
+    """Tests pipeline behavior when the data directory is empty or missing channels."""
     empty_data_dir = tmp_path / "empty_data"
     empty_data_dir.mkdir()
     output_dir = tmp_path / "output_nodata"
@@ -156,7 +151,7 @@ def test_pipeline_run_handles_no_data(tmp_path):
                configuration issue" in results.get("message", "")
 
 def test_pipeline_init_invalid_config():
-    """ Tests __init__ validation checks """
+    """Tests __init__ validation checks."""
     with pytest.raises(ValueError, match="Channel list cannot be empty"):
         SolarAnomalyPipeline(data_dir="dummy", output_dir="dummy", channels=[])
 
@@ -165,12 +160,12 @@ def test_pipeline_init_invalid_config():
                              channels=['94'], cluster_method="InvalidMethod")
 
     with pytest.raises(ValueError, match="Number of clusters must be positive"):
-        SolarAnomalyPipeline(data_dir="dummy", output_dir="dummy", 
+        SolarAnomalyPipeline(data_dir="dummy", output_dir="dummy",
                              channels=['94'], n_clusters=0)
 
 # --- Unit Test Example (Opcional) ---
 def test_pipeline_validate_params_passes():
-    """ Unit test for _validate_params success case (requires temp dir) """
+    """Unit test for _validate_params success case (requires temp dir)"""
     # Need actual directories for the check inside _validate_params
     with pytest.MonkeyPatch.context() as mp:
         # Mock os.path.isdir to return True to bypass actual dir check if needed

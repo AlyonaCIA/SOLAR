@@ -52,8 +52,7 @@ log = logging.getLogger(__name__)
 
 class SolarAnomalyPipeline:
     """Encapsulates the entire pipeline for detecting and clustering anomalies in
-    SDO/AIA multi-channel solar imagery.
-    """
+    SDO/AIA multi-channel solar imagery."""
 
     def __init__(self,
                  data_dir: str,
