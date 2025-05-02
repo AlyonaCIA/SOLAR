@@ -92,4 +92,4 @@ Librería para usar que puede ser funcional https://github.com/arogozhnikov/eino
 Carlos sugiere enfocarse en isolation forest y el normalizing flows.
 
 
-Enfatizar y que quede claro: 1. queremos todos los canales concatenados. 2. Tanto con el isolation forest como con el outlier factor, es decir los dos algoritmos, saltar de la forma predict a la forma en la que puedas tener todo el rango de valores y tu jugar con ese umbral. 3. Carlos comparte el nflows que tienes que adaptar a los datos y tener un par de plots. 4. Si todo está hecho y hay tiempo probar con el autoencoder. 
+Enfatizar y que quede claro: 1. queremos todos los canales concatenados. 2. Tanto con el isolation forest como con el outlier factor, es decir los dos algoritmos, saltar de la forma predict a la forma en la que puedas tener todo el rango de valores y tu jugar con ese umbral. 3. Carlos comparte el nflows que tienes que adaptar a los datos y tener un par de plots. 4. Si todo está hecho y hay tiempo probar con el autoencoder.

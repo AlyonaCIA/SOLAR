@@ -116,8 +116,8 @@ def test_create_circular_mask_valid(sample_image_data, sample_metadata):
     assert mask[9, 9] == False
 
 def test_create_circular_mask_fallback(sample_image_data):
-    """
-    Verifica la creación de máscara cuando falta metadata clave.
+    """Verifica la creación de máscara cuando falta metadata clave.
+
     Utiliza los valores de fallback de la función original (radio 960).
     """
     bad_metadata = {'NAXIS1': 10, 'NAXIS2': 10} # No contiene 'cdelt1' ni 'rsun_obs'
