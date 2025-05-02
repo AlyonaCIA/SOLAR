@@ -1,7 +1,8 @@
 """Module to Display Data."""
 import os
-import sunpy.map
+
 import matplotlib.pyplot as plt
+import sunpy.map
 
 # Obtén la ruta del directorio donde está este archivo
 script_dir = os.path.dirname(os.path.abspath(__file__))

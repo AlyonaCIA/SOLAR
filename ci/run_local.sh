@@ -1,4 +1,5 @@
-#!/usr/bin/env bash
+#!/usr/bin/env zsh
+# if you have bash use it like here "#!/usr/bin/env bash"
 ## Parse arguments
 set -e
 
@@ -43,7 +44,7 @@ case $key in
     --install|-i)
         echo "Installing requirements"
         pip install -r requirements.txt
-        pip install -r ${CI_SCRIPTS_PATH}/validation_requirements.txt
+        pip install -r ${CI_SCRIPTS_PATH}/requirements/validation_requirements.txt
         echo "Succeeded"
         exit 0
     ;;

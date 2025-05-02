@@ -16,7 +16,8 @@ exclude=.git,
         build,
         dist,
         test/,
-        .eggs
+        .eggs,
+        Solar_eda_project
 per-file-ignores = __init__.py:F401
 [DESIGN]
 # This allows for 10 instance attributes in a class (default is 7).

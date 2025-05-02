@@ -5,11 +5,11 @@ with all wavelength channels
 
 # Standard library imports
 import os
-import matplotlib.pyplot as plt
 
 # Third-party imports
 import astropy.units as u
-from sunpy.net import Fido, attrs as a
+from sunpy.net import Fido
+from sunpy.net import attrs as a
 
 # Define the date range for data retrieval
 start_date = '2020-09-01T00:00:00'

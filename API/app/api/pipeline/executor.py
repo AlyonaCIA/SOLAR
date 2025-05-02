@@ -1,13 +1,14 @@
 import os
-import numpy as np
+
 import matplotlib
-from tqdm import tqdm
-
+import numpy as np
 from app.api.pipeline.data_loader import load_masked_channel_data
-from app.api.pipeline.preprocess import  prepare_data_concatenated
-from app.api.pipeline.model import detect_anomalies_isolation_forest, perform_kmeans_clustering, create_cluster_mask
+from app.api.pipeline.model import (create_cluster_mask,
+                                    detect_anomalies_isolation_forest,
+                                    perform_kmeans_clustering)
+from app.api.pipeline.preprocess import prepare_data_concatenated
 from app.api.pipeline.visualization import plot_results
-
+from tqdm import tqdm
 
 # --- Defalut Configuration ---
 config = {
@@ -21,9 +22,10 @@ config = {
     "random_state": 42
 }
 
+
 def run_pipeline(config=config):
-    """
-    Runs the entire pipeline for anomaly detection and clustering on solar image data.
+    """Runs the entire pipeline for anomaly detection and clustering on solar image
+    data.
 
     Steps:
         0. Create output directory
@@ -62,7 +64,8 @@ def run_pipeline(config=config):
 
     # --- 2. Prepare data for anomaly detection ---
     print("Step 2: Preparing data for anomaly detection...")
-    prepared_data, valid_pixel_mask, nan_mask = prepare_data_concatenated(masked_data_list)
+    prepared_data, valid_pixel_mask, nan_mask = prepare_data_concatenated(
+        masked_data_list)
 
     # --- 3. Anomaly detection with Isolation Forest ---
     print("Step 3: Running Isolation Forest for anomaly detection...")
@@ -91,12 +94,14 @@ def run_pipeline(config=config):
             n_clusters = 0
         else:
             # Get valid pixel indices and build mapping
-            valid_indices = np.argwhere(~nan_mask.reshape((config["image_size"], config["image_size"])))
+            valid_indices = np.argwhere(~nan_mask.reshape(
+                (config["image_size"], config["image_size"])))
             index_map = {tuple(idx): i for i, idx in enumerate(valid_indices)}
 
             # Get valid anomaly pixel indices
             anomaly_indices = np.argwhere(anomaly_mask)
-            valid_keys = [tuple(idx) for idx in anomaly_indices if tuple(idx) in index_map]
+            valid_keys = [tuple(idx)
+                          for idx in anomaly_indices if tuple(idx) in index_map]
 
             if not valid_keys:
                 print("    No valid anomaly pixels found within the valid pixel mask.")
@@ -108,7 +113,7 @@ def run_pipeline(config=config):
                 # Extract feature vectors for valid anomalies
                 feature_indices = [index_map[key] for key in valid_keys]
                 features = prepared_data[feature_indices]
-                valid_pixel_positions = np.array(valid_keys)
+                np.array(valid_keys)
 
                 # Perform KMeans clustering
                 cluster_labels, _ = perform_kmeans_clustering(
@@ -119,7 +124,10 @@ def run_pipeline(config=config):
                 print(f"    Clusters formed: {np.unique(cluster_labels).size}")
 
                 # Generate cluster mask and colormap
-                cluster_mask, cluster_cmap, cluster_patches, n_clusters = create_cluster_mask(
+                cluster_mask,  # noqa: F821
+                cluster_cmap,  # noqa: F821
+                cluster_patches,  # noqa: F821
+                n_clusters = create_cluster_mask(
                     anomaly_mask,
                     cluster_labels,
                     valid_pixel_mask,

@@ -1,17 +1,14 @@
+from typing import List, Tuple
+
 import numpy as np
-from skimage.transform import resize
 from sklearn.preprocessing import RobustScaler
-from typing import Tuple, List
-
-
 
 
 def prepare_data_concatenated(
     masked_images: List[np.ndarray]
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Concatenate masked images from multiple channels, remove NaNs,
-    and apply robust scaling.
+    """Concatenate masked images from multiple channels, remove NaNs, and apply robust
+    scaling.
 
     Args:
         masked_images (List[np.ndarray]): List of 2D masked images (one per channel).

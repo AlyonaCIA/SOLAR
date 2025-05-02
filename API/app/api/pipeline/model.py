@@ -1,21 +1,22 @@
-import numpy as np
-from skimage.transform import resize
-from sklearn.preprocessing import RobustScaler
 from typing import Tuple
-from sklearn.ensemble import IsolationForest
-from sklearn.cluster import KMeans
-import matplotlib.pyplot as plt
+
 import matplotlib
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.ensemble import IsolationForest
 
 matplotlib.use('Agg')
 
 
 def detect_anomalies_isolation_forest(
-    data: np.ndarray, contamination: float, image_size:int,valid_pixel_mask: np.ndarray
+    data: np.ndarray,
+    contamination: float,
+    image_size: int,
+    valid_pixel_mask: np.ndarray
 ) -> np.ndarray:
-    """
-    Detects anomalies using Isolation Forest and returns anomaly scores.
+    """Detects anomalies using Isolation Forest and returns anomaly scores.
 
     Parameters
     ----------
@@ -46,8 +47,7 @@ def detect_anomalies_isolation_forest(
 def perform_kmeans_clustering(
     data: np.ndarray, n_clusters: int, random_state: int = 42
 ) -> Tuple[np.ndarray, float]:
-    """
-    Performs K-Means clustering on the given data.
+    """Performs K-Means clustering on the given data.
 
     Parameters
     ----------
@@ -78,8 +78,7 @@ def perform_kmeans_clustering(
 def determine_optimal_k_elbow(
     data: np.ndarray, max_k: int = 10, random_state: int = 42
 ) -> int:
-    """
-    Uses the Elbow method to determine the optimal number of clusters.
+    """Uses the Elbow method to determine the optimal number of clusters.
 
     Parameters
     ----------
@@ -124,8 +123,8 @@ def create_cluster_mask(
     valid_pixel_mask: np.ndarray,
     image_size: int
 ) -> Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
-    """
-    Generates a 2D cluster mask showing spatial location of clusters over anomaly pixels.
+    """Generates a 2D cluster mask showing spatial location of clusters over anomaly
+    pixels.
 
     Parameters
     ----------

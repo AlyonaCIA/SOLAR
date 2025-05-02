@@ -1,20 +1,20 @@
-from fastapi import APIRouter, File, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
 import os
 import shutil
 import uuid
 from typing import List
+
 from app.api.pipeline.executor import run_pipeline
 from app.config.settings import config
+from fastapi import APIRouter, File, UploadFile
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
+
 @router.post("/analyze")
 async def analyze_fits(files: List[UploadFile] = File(...)):
-    """
-    Accepts multiple .fits files, runs the anomaly detection pipeline,
-    and returns a list of generated output image filenames.
-    """
+    """Accepts multiple .fits files, runs the anomaly detection pipeline, and returns a
+    list of generated output image filenames."""
 
     tmp_id = str(uuid.uuid4())
     input_dir = f"temp_data/{tmp_id}"
@@ -44,7 +44,8 @@ async def analyze_fits(files: List[UploadFile] = File(...)):
     ]
 
     if not output_files:
-        return JSONResponse(status_code=404, content={"error": "No output images found."})
+        return JSONResponse(status_code=404, content={
+                            "error": "No output images found."})
 
     return {
         "output_dir": output_dir,
