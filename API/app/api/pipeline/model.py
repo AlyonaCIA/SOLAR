@@ -20,7 +20,7 @@ def detect_anomalies_isolation_forest(
     iso_forest = IsolationForest(
         contamination=contamination, random_state=42, n_jobs=-1 # Use n_jobs=-1 for potential speedup
     )
-    print(f"Fitting Isolation Forest (contamination={contamination}) on data shape: {data.shape}")
+    print(f"\tFitting Isolation Forest (contamination={contamination}) on data shape: {data.shape}\n")
     iso_forest.fit(data)
     return iso_forest.decision_function(data)
 
@@ -75,7 +75,7 @@ def perform_kmeans_clustering(
         n_init='auto' # Use 'auto' for default (10 in recent sklearn)
     )
     kmeans.fit(data)
-    print(f"  K-Means inertia: {kmeans.inertia_:.2f}")
+    print(f"\tK-Means inertia: {kmeans.inertia_:.2f}")
     return kmeans.labels_, kmeans.inertia_
 
 
@@ -91,8 +91,8 @@ def create_cluster_mask(
     image_size: int
 ) -> Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
     """Creates a 2D cluster mask from anomaly mask and cluster labels."""
-    print("-" * 20)
-    print("Inside create_cluster_mask:")
+    print("\t"+"-" * 20)
+    print("\t"+"Inside create_cluster_mask:")
     # anomaly_mask is the 2D boolean mask from thresholding anomaly scores
     # labels correspond to the *anomalous* pixels only
     # valid_pixel_mask is the 1D boolean mask where True means the pixel was valid *before* anomaly detection
@@ -101,9 +101,9 @@ def create_cluster_mask(
          print("Warning: Inputs to create_cluster_mask are invalid. Returning empty cluster map.")
          return np.zeros((image_size, image_size), dtype=int), matplotlib.colors.ListedColormap([]), [], 0
 
-    print(f"Input anomaly_mask shape: {anomaly_mask.shape} (Sum: {np.sum(anomaly_mask)})")
-    print(f"Input labels length: {len(labels)}")
-    print(f"Input valid_pixel_mask shape: {valid_pixel_mask.shape} (Sum: {np.sum(valid_pixel_mask)})")
+    print(f"\t\tInput anomaly_mask shape: {anomaly_mask.shape} (Sum: {np.sum(anomaly_mask)})")
+    print(f"\t\tInput labels length: {len(labels)}")
+    print(f"\t\tInput valid_pixel_mask shape: {valid_pixel_mask.shape} (Sum: {np.sum(valid_pixel_mask)})")
 
     cluster_mask_2d = np.zeros((image_size, image_size), dtype=int)
     n_clusters = 0
@@ -135,7 +135,7 @@ def create_cluster_mask(
 
 
         n_clusters = len(np.unique(labels))
-        print(f"Number of unique cluster labels found: {n_clusters}")
+        print(f"\t\tNumber of unique cluster labels found: {n_clusters}")
 
         # Define colors
         cluster_colors = [
@@ -166,6 +166,6 @@ def create_cluster_mask(
         print("No anomaly labels or no anomalous pixels in mask. No clusters to map.")
 
 
-    print(f"Final cluster_mask_2d shape: {cluster_mask_2d.shape}, Max value: {np.max(cluster_mask_2d)}")
-    print("-" * 20)
+    print(f"\t\tFinal cluster_mask_2d shape: {cluster_mask_2d.shape}, Max value: {np.max(cluster_mask_2d)}")
+    print("\t"+"-" * 20)
     return cluster_mask_2d, cluster_cmap, cluster_patches, n_clusters

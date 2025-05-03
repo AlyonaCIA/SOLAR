@@ -89,7 +89,7 @@ def plot_results(
             cmap_name = base_cmap_name.format(channel=channel)
             img_cmap = plt.get_cmap(cmap_name)
         except ValueError:
-            print(f"Colormap {cmap_name} not found, using {fallback_cmap}.")
+            # print(f"Colormap {cmap_name} not found, using {fallback_cmap}.")
             img_cmap = fallback_cmap
 
         # Plot base image (masked data)
@@ -156,4 +156,4 @@ def plot_results(
     )
     plt.savefig(filename, bbox_inches='tight', dpi=150)  # Increase DPI slightly
     plt.close(fig)
-    print(f"Figure saved to: {filename}")
+    print(f"\tFigure saved to: {filename}\n")
