@@ -94,6 +94,12 @@ def create_circular_mask_jp2(data: np.ndarray, fixed_radius_pixels: int) -> np.n
     print(f"  Generated JP2 mask shape: {mask.shape}, Sum: {np.sum(mask)}")
     return mask
 
+
+
+
+
+
+
 # --- Common Preprocessing ---
 def preprocess_image(
     data: np.ndarray, mask: np.ndarray, size: int = 512
@@ -114,6 +120,10 @@ def preprocess_image(
     masked_data[~resized_mask] = np.nan # Set pixels outside the resized mask to NaN
     print(f"  Final masked data shape: {masked_data.shape}, Non-NaN count: {np.sum(~np.isnan(masked_data))}")
     return masked_data
+
+
+
+
 
 
 # --- Data Preparation --- (No changes needed here)

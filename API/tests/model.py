@@ -11,37 +11,24 @@ matplotlib.use('Agg')
 
 
 def detect_anomalies_isolation_forest(
-    data: np.ndarray,
-    contamination: float,
-    image_size: int,
-    valid_pixel_mask: np.ndarray
+    data: np.ndarray, contamination: float
 ) -> np.ndarray:
-    """Detects anomalies using Isolation Forest and returns anomaly scores.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Input data for anomaly detection of shape (n_samples, n_features).
-    contamination : float
-        The proportion of anomalies in the data.
-    image_size : int
-        Size of the image (height and width) to reshape the output.
-
-    Returns
-    -------
-    anomaly_map: np.ndarray
-        2D array of shape (image_size, image_size) with anomaly scores.
-    """
+    """Detects anomalies using Isolation Forest."""
+    if data.shape[0] == 0: # Handle empty input data
+        print("Warning: Cannot detect anomalies on empty dataset.")
+        return np.array([])
     iso_forest = IsolationForest(
-        contamination=contamination, random_state=42
+        contamination=contamination, random_state=42, n_jobs=-1 # Use n_jobs=-1 for potential speedup
     )
+    print(f"Fitting Isolation Forest (contamination={contamination}) on data shape: {data.shape}")
     iso_forest.fit(data)
+    return iso_forest.decision_function(data)
 
-    anomaly_scores = iso_forest.decision_function(data)
-    anomaly_map = np.full((image_size, image_size), np.nan)
-    anomaly_map[valid_pixel_mask.reshape(image_size, image_size)] = anomaly_scores
 
-    return anomaly_map
+
+
+
+
 
 
 def perform_kmeans_clustering(
@@ -74,136 +61,111 @@ def perform_kmeans_clustering(
     kmeans.fit(data)
     return kmeans.labels_, kmeans.inertia_
 
+def perform_kmeans_clustering(
+    data: np.ndarray, n_clusters: int, random_state: int = 42
+) -> Tuple[np.ndarray, float]:
+    """Performs K-Means clustering."""
+    if data.shape[0] == 0: # Handle empty input data
+        print("Warning: Cannot perform K-Means on empty dataset.")
+        return np.array([]), np.inf # Return empty labels and infinite inertia
+    print(f"Performing K-Means (k={n_clusters}) on data shape: {data.shape}")
+    kmeans = KMeans(
+        n_clusters=n_clusters,
+        random_state=random_state,
+        n_init='auto' # Use 'auto' for default (10 in recent sklearn)
+    )
+    kmeans.fit(data)
+    print(f"  K-Means inertia: {kmeans.inertia_:.2f}")
+    return kmeans.labels_, kmeans.inertia_
 
-def determine_optimal_k_elbow(
-    data: np.ndarray, max_k: int = 10, random_state: int = 42
-) -> int:
-    """Uses the Elbow method to determine the optimal number of clusters.
 
-    Parameters
-    ----------
-    data : np.ndarray
-        Data to be clustered of shape (n_samples, n_features).
-    max_k : int, optional
-        Maximum number of clusters to test, by default 10.
-    random_state : int, optional
-        Random seed for reproducibility, by default 42.
 
-    Returns
-    -------
-    int
-        Estimated optimal number of clusters.
-    """
-    inertias = []
-    for k in range(1, max_k + 1):
-        _, inertia = perform_kmeans_clustering(data, k, random_state)
-        inertias.append(inertia)
 
-    plt.figure(figsize=(8, 6))
-    plt.plot(range(1, max_k + 1), inertias, marker='o')
-    plt.title('Elbow Method For Optimal k')
-    plt.xlabel('Number of clusters (k)')
-    plt.ylabel('Inertia')
-    plt.grid(True)
-    elbow_plot_path = "elbow_plot.png"
-    plt.savefig(elbow_plot_path)
-    plt.close()
-    print(f"Elbow plot saved to: {elbow_plot_path}")
 
-    diffs = np.diff(inertias)
-    diffs2 = np.diff(diffs)
-    optimal_k = np.argmax(diffs2) + 2
-
-    return optimal_k
 
 
 def create_cluster_mask(
     anomaly_mask: np.ndarray,
     labels: np.ndarray,
-    valid_pixel_mask: np.ndarray,
+    valid_pixel_mask: np.ndarray, # This mask corresponds to the *flattened* scaled data
     image_size: int
 ) -> Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
-    """Generates a 2D cluster mask showing spatial location of clusters over anomaly
-    pixels.
-
-    Parameters
-    ----------
-    anomaly_mask : np.ndarray
-        2D boolean mask indicating which pixels are considered anomalous.
-    labels : np.ndarray
-        Cluster labels assigned to each anomaly pixel.
-    valid_pixel_mask : np.ndarray
-        1D boolean mask indicating which pixels are valid (non-NaN).
-    image_size : int
-        Size (height/width) of the square image.
-
-    Returns
-    -------
-    Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]
-        cluster_mask : np.ndarray
-            2D array with cluster indices assigned to anomaly pixels.
-        cluster_cmap : matplotlib.colors.ListedColormap
-            Colormap used to visualize cluster assignments.
-        cluster_patches : list
-            List of legend patches for labeling clusters in a plot.
-        n_clusters : int
-            Total number of clusters found.
-    """
+    """Creates a 2D cluster mask from anomaly mask and cluster labels."""
     print("-" * 20)
     print("Inside create_cluster_mask:")
-    print(f"anomaly_mask.shape: {anomaly_mask.shape}")
-    print(f"np.sum(anomaly_mask): {np.sum(anomaly_mask)}")
+    # anomaly_mask is the 2D boolean mask from thresholding anomaly scores
+    # labels correspond to the *anomalous* pixels only
+    # valid_pixel_mask is the 1D boolean mask where True means the pixel was valid *before* anomaly detection
 
-    cluster_mask = np.zeros_like(anomaly_mask, dtype=int)
+    if anomaly_mask is None or labels is None or valid_pixel_mask is None:
+         print("Warning: Inputs to create_cluster_mask are invalid. Returning empty cluster map.")
+         return np.zeros((image_size, image_size), dtype=int), matplotlib.colors.ListedColormap([]), [], 0
+
+    print(f"Input anomaly_mask shape: {anomaly_mask.shape} (Sum: {np.sum(anomaly_mask)})")
+    print(f"Input labels length: {len(labels)}")
+    print(f"Input valid_pixel_mask shape: {valid_pixel_mask.shape} (Sum: {np.sum(valid_pixel_mask)})")
+
+    cluster_mask_2d = np.zeros((image_size, image_size), dtype=int)
     n_clusters = 0
     cluster_cmap = matplotlib.colors.ListedColormap([])
     cluster_patches = []
 
-    if len(labels) > 0:
-        n_clusters = len(np.unique(labels))
-        print(f"Number of clusters (n_clusters): {n_clusters}")
+    # Check if there are any anomaly labels to process
+    if len(labels) > 0 and np.any(anomaly_mask):
+        # Ensure labels correspond only to the anomalous pixels
+        num_anomalous_pixels_in_anomaly_mask = np.sum(anomaly_mask)
 
+        # We need to map the labels back to the 2D grid.
+        # The labels correspond to the `anomaly_intensity_features` which were derived
+        # from `prepared_data[anomaly_indices]`.
+        # `prepared_data` corresponds to `reshaped_data[valid_pixel_mask]`.
+
+        # Create a full-size array for labels, initially zero or a placeholder
+        # Map 1D valid_pixel_mask to 2D
+        valid_pixel_mask_2d = valid_pixel_mask.reshape((image_size, image_size))
+
+        # Find the 2D indices of the pixels that were both valid AND anomalous
+        valid_and_anomalous_indices_2d = np.argwhere(valid_pixel_mask_2d & anomaly_mask)
+
+        if len(valid_and_anomalous_indices_2d) != len(labels):
+             print(f"Warning: Mismatch between number of valid+anomalous pixels ({len(valid_and_anomalous_indices_2d)}) and number of labels ({len(labels)}). Check logic.")
+             # Attempt to proceed if possible, otherwise return empty
+             if len(valid_and_anomalous_indices_2d) == 0 :
+                  return cluster_mask_2d, cluster_cmap, cluster_patches, n_clusters
+
+
+        n_clusters = len(np.unique(labels))
+        print(f"Number of unique cluster labels found: {n_clusters}")
+
+        # Define colors
         cluster_colors = [
             '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-            '#8c564b', '#e377c2', '#7f7f7f'
+            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#1f77b4' # Added more colors
         ]
-        cluster_cmap = matplotlib.colors.ListedColormap(
-            cluster_colors[:n_clusters]
-        )
+        # Handle case where n_clusters might exceed defined colors
+        if n_clusters > len(cluster_colors):
+            print(f"Warning: Number of clusters ({n_clusters}) exceeds defined colors ({len(cluster_colors)}). Repeating colors.")
+            cluster_colors = (cluster_colors * (n_clusters // len(cluster_colors) + 1))[:n_clusters]
 
-        valid_pixel_mask_2d = valid_pixel_mask.reshape((image_size, image_size))
-        anomaly_pixels_indices = np.argwhere(anomaly_mask)
-        print(f"len(anomaly_pixels_indices): {len(anomaly_pixels_indices)}")
+        cluster_cmap = matplotlib.colors.ListedColormap(cluster_colors)
 
-        valid_pixel_indices_2d = np.argwhere(valid_pixel_mask_2d)
-        pixel_index_map = {
-            tuple(index_2d): i for i, index_2d in enumerate(valid_pixel_indices_2d)
-        }
+        # Assign cluster labels to the corresponding 2D positions
+        # Add 1 to labels so cluster indices start from 1 (0 means no cluster)
+        cluster_mask_2d[tuple(valid_and_anomalous_indices_2d.T)] = labels + 1
 
-        valid_anomaly_pixel_indices = []
-        for anomaly_pixel_index_2d in anomaly_pixels_indices:
-            if tuple(anomaly_pixel_index_2d) in pixel_index_map:
-                valid_anomaly_pixel_indices.append(anomaly_pixel_index_2d)
-        valid_anomaly_pixel_indices = np.array(valid_anomaly_pixel_indices)
-        print(f"len(valid_anomaly_pixel_indices): {len(valid_anomaly_pixel_indices)}")
-        print(f"labels.shape: {labels.shape}")
+        # Create legend patches
+        for cluster_idx in range(n_clusters):
+            cluster_color = cluster_cmap(cluster_idx / (n_clusters -1 if n_clusters > 1 else 1)) # Normalize index correctly
+            cluster_patches.append(
+                mpatches.Patch(
+                    color=cluster_color,
+                    label=f'Cluster {cluster_idx + 1}'
+                )
+            )
+    else:
+        print("No anomaly labels or no anomalous pixels in mask. No clusters to map.")
 
-        if len(valid_anomaly_pixel_indices) > 0:
-            for cluster_idx in range(n_clusters):
-                cluster_pixel_indices = valid_anomaly_pixel_indices[
-                    labels == cluster_idx
-                ]
-                if len(cluster_pixel_indices) > 0:
-                    cluster_mask[tuple(cluster_pixel_indices.T)] = (
-                        cluster_idx + 1
-                    )
-                    cluster_color = cluster_cmap(cluster_idx / n_clusters)
-                    cluster_patches.append(
-                        mpatches.Patch(
-                            color=cluster_color,
-                            label=f'Cluster {cluster_idx + 1}'
-                        )
-                    )
 
+    print(f"Final cluster_mask_2d shape: {cluster_mask_2d.shape}, Max value: {np.max(cluster_mask_2d)}")
     print("-" * 20)
-    return cluster_mask, cluster_cmap, cluster_patches, n_clusters
+    return cluster_mask_2d, cluster_cmap, cluster_patches, n_clusters

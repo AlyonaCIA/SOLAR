@@ -4,27 +4,27 @@ import numpy as np
 from sklearn.preprocessing import RobustScaler
 
 
+
+# --- Data Preparation --- (No changes needed here)
 def prepare_data_concatenated(
-    masked_images: List[np.ndarray]
+    masked_data_list: list
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Concatenate masked images from multiple channels, remove NaNs, and apply robust
-    scaling.
+    """Concatenates masked data, handles NaNs, and scales the data."""
+    stacked_data = np.stack(masked_data_list, axis=-1)
+    reshaped_data = stacked_data.reshape((-1, len(masked_data_list)))
+    nan_mask = np.isnan(reshaped_data).any(axis=1)
+    # Ensure we don't try to scale if all pixels are NaN after masking/concatenation
+    if np.all(nan_mask):
+        print("Warning: All pixels are NaN after concatenation. Cannot scale.")
+        return np.array([]), np.array([]), nan_mask # Return empty arrays and the mask
 
-    Args:
-        masked_images (List[np.ndarray]): List of 2D masked images (one per channel).
-
-    Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]:
-            - scaled_data: 2D array of shape (valid_pixels, num_channels).
-            - valid_pixel_mask: 1D boolean array indicating valid pixels.
-            - nan_mask: 1D boolean array indicating pixels with NaN in any channel.
-    """
-    stacked = np.stack(masked_images, axis=-1)  # Shape: (H, W, C)
-    reshaped = stacked.reshape(-1, len(masked_images))  # Shape: (pixels, channels)
-    nan_mask = np.isnan(reshaped).any(axis=1)  # Pixels with NaN in any channel
-    valid_data = reshaped[~nan_mask]  # Remove invalid pixels
+    cleaned_data = reshaped_data[~nan_mask]
+    # Handle case where cleaned_data might be empty after removing NaNs
+    if cleaned_data.shape[0] == 0:
+         print("Warning: No valid (non-NaN) pixels left after masking.")
+         return np.array([]), np.array([]), nan_mask # Return empty arrays and the mask
 
     scaler = RobustScaler()
-    scaled_data = scaler.fit_transform(valid_data)
+    scaled_data = scaler.fit_transform(cleaned_data)
+    return scaled_data, ~nan_mask, nan_mask # Return scaled data, valid pixel mask, and NaN mask
 
-    return scaled_data, ~nan_mask, nan_mask
