@@ -12,8 +12,8 @@ router = APIRouter()
 
 
 @router.post("/analyze")
-async def analyze_fits(files: List[UploadFile] = File(...)):
-    """Accepts multiple .fits files, runs the anomaly detection pipeline, and returns a
+async def analyze_jp2(files: List[UploadFile] = File(...)):
+    """Accepts multiple .jp2 files, runs the anomaly detection pipeline, and returns a
     list of generated output image filenames."""
 
     tmp_id = str(uuid.uuid4())
