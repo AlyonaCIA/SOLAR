@@ -3,111 +3,88 @@ import re
 from typing import List, Set, Tuple, Union
 
 import numpy as np
-import sunpy.map
+import imageio
 from skimage.transform import resize
 
 
-def load_masked_channel_data(
+def load_masked_channel_data_jp2(
     data_dir: str,
     image_size: Union[int, Tuple[int, int]],
-    excluded_channels: Set[int] = {1600, 1700}
+    excluded_channels: Set[int] = {1600, 1700},
+    mask_radius: int = 512 // 2  # default, can be overwritten per image
 ) -> Tuple[List[np.ndarray], List[str], List[str]]:
-    """Detect valid AIA channels from FITS filenames in the given directory, and load
-    and preprocess the corresponding image data.
+    masked_data, channel_names, jp2_paths = [], [], []
 
-    Parameters:
-        data_dir (str): Directory containing the .image.fits files.
-        image_size (int or tuple): Target size for resizing the images.
-        excluded_channels (Set[int], optional): Set of channel numbers to exclude
-        from processing.
+    for root, _, files in os.walk(data_dir):
+        for file in files:
+            if not file.endswith(".jp2"):
+                continue
 
-    Returns:
-        Tuple[List[np.ndarray], List[str], List[str]]:
-            - List of masked and resized image arrays (NaNs outside solar disk).
-            - List of channel numbers (as strings) corresponding to each image.
-            - List of filenames used in the process.
-    """
-    channel_pattern = re.compile(r"\.(\d+)\.image\.fits$")
-    masked_data_list = []
-    channel_names = []
-    valid_files = []
-    channels_set = set()
+            match = re.search(r"AIA_(\d+)\.jp2$", file)
+            if not match:
+                continue
 
-    for fname in os.listdir(data_dir):
-        match = channel_pattern.search(fname)
-        if not match:
-            continue
+            channel = int(match.group(1))
+            if channel in excluded_channels:
+                continue
 
-        channel = int(match.group(1))
-        if channel in excluded_channels:
-            continue
+            jp2_path = os.path.join(root, file)
+            # print(f"Attempting to load JP2 with Imageio: {jp2_path}")
+            try:
+                data = imageio.v2.imread(jp2_path)
+                print(f"\tLoaded shape: {data.shape}, dtype: {data.dtype}")
 
-        channel_names.append(str(channel))
-        channels_set.add(f"aia_{channel}")
-        valid_files.append(fname)
+                # --- Ajuste dinámico del radio si la imagen no es 4096x4096 ---
+                if data is not None:
+                    if data.shape != (4096, 4096) and mask_radius == 1600:
+                        scale_factor = min(data.shape) / 4096.0
+                        scaled_radius = int(1600 * scale_factor)
+                        print(f"Warning: JP2 image shape {data.shape} is not 4096x4096. "
+                              f"Adjusting mask radius from {mask_radius} to {scaled_radius}.")
+                        mask_radius_to_use = scaled_radius
+                    else:
+                        mask_radius_to_use = mask_radius
 
-        fits_path = os.path.join(data_dir, fname)
-        try:
-            aia_map = sunpy.map.Map(fits_path)
-            data, metadata = aia_map.data, aia_map.meta
-            mask = create_circular_mask(data, metadata)
-            masked = preprocess_image(data, mask, image_size)
-            masked_data_list.append(masked)
-        except Exception as e:
-            print(f"Error processing {fname}: {e}")
+                    mask = create_circular_mask_jp2(data, mask_radius_to_use)
+                    masked = preprocess_image(data, mask, image_size)
 
-    if not channels_set:
-        print("No valid channels found in the data. Exiting.")
-    if not masked_data_list:
-        print("No data loaded. Exiting.")
+                    masked_data.append(masked)
+                    channel_names.append(str(channel))
+                    jp2_paths.append(jp2_path)
 
-    return masked_data_list, channel_names, valid_files
+            except Exception as e:
+                print(f"Error processing {jp2_path}: {e}")
+
+    if not masked_data:
+        print("No JP2 data loaded. Exiting.")
+
+    return masked_data, channel_names, jp2_paths
 
 
-def create_circular_mask(image: np.ndarray, metadata: dict) -> np.ndarray:
-    """Generate a circular mask for the solar disk using FITS metadata.
-
-    Parameters:
-        image (np.ndarray): 2D array of image data.
-        metadata (dict): FITS header metadata with spatial scale and solar radius.
-
-    Returns:
-        np.ndarray: Boolean mask (True = inside solar disk, False = outside).
-    """
-    height, width = image.shape
-    x_center, y_center = width // 2, height // 2
-    cdelt1 = metadata.get("cdelt1", 1.0)  # Arcseconds per pixel
-    rsun_arcsec = metadata.get("rsun_obs", 960.0)  # Solar radius in arcseconds
-    rsun_pixels = int(rsun_arcsec / abs(cdelt1))
-
-    y, x = np.ogrid[:height, :width]
-    distance = np.sqrt((x - x_center) ** 2 + (y - y_center) ** 2)
-    return distance <= rsun_pixels
+def create_circular_mask_jp2(data: np.ndarray, fixed_radius_pixels: int) -> np.ndarray:
+    if data is None:
+        raise ValueError("Input data cannot be None for JP2 mask creation.")
+    ny, nx = data.shape
+    print(f"\t\tCreating JP2 mask for image size {ny}x{nx} using fixed radius: {fixed_radius_pixels}")
+    x_center, y_center = nx // 2, ny // 2
+    y, x = np.ogrid[:ny, :nx]
+    distance_from_center = np.sqrt((x - x_center)**2 + (y - y_center)**2)
+    mask = distance_from_center <= fixed_radius_pixels
+    print(f"\t\tGenerated JP2 mask shape: {mask.shape}, Sum: {np.sum(mask)}")
+    return mask
 
 
 def preprocess_image(
-    image: np.ndarray,
-    mask: np.ndarray,
-    output_size: Union[int, Tuple[int, int]] = 512
+    data: np.ndarray, mask: np.ndarray, size: int = 512
 ) -> np.ndarray:
-    """Resize an image to the desired shape and apply a mask, replacing masked regions
-    with NaNs.
+    if data is None or mask is None:
+        raise ValueError("Data and mask must be provided for preprocessing.")
+    print(f"\t\tPreprocessing: Resizing data ({data.shape}) and mask ({mask.shape}) to {size}x{size}")
+    resized_data = resize(data, (size, size), mode='reflect', anti_aliasing=True)
+    resized_mask = resize(mask.astype(float), (size, size), mode='reflect', anti_aliasing=False) > 0.5
+    print(f"\t\tResized mask shape: {resized_mask.shape}, Sum: {np.sum(resized_mask)}")
 
-    Parameters:
-        image (np.ndarray): 2D input image array.
-        mask (np.ndarray): Boolean array where True indicates valid (unmasked) pixels.
-        output_size (int or tuple): Output dimensions for the resized image.
-
-    Returns:
-        np.ndarray: Preprocessed image array with masked areas set to NaN.
-    """
-    resized_image = resize(
-        image, (output_size, output_size), mode='reflect', anti_aliasing=True
-    )
-    resized_mask = resize(
-        mask, (output_size, output_size), mode='reflect', anti_aliasing=False
-    ) > 0.5
-
-    masked_image = resized_image.copy()
-    masked_image[~resized_mask] = np.nan
-    return masked_image
+    masked_data = resized_data.copy()
+    masked_data[~resized_mask] = np.nan
+    print(f"\t\tFinal masked data shape: {masked_data.shape}, Non-NaN count: {np.sum(~np.isnan(masked_data))}\n")
+    return masked_data
