@@ -8,8 +8,147 @@ from app.config.settings import config
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
 
+import aiohttp
+import asyncio
+from typing import List, Dict
+import urllib.parse
+import base64
+from pathlib import Path
+
+# Add these constants near the top
+HELIOVIEWER_BASE_URL = "https://api.helioviewer.org"
+SOURCE_IDS = [8, 9, 10, 11, 12, 13, 14]
+SOURCE_ID_TO_CHANNEL_MAP = {8: '94', 9: '131', 10: '171', 11: '193', 12: '211', 13: '304', 14: '335'}
+
 router = APIRouter()
 
+async def fetch_jp2_image(session: aiohttp.ClientSession, source_id: int, timestamp: str) -> bytes:
+    """Fetches a JP2 image from Helioviewer API."""
+    params = {
+        "sourceId": source_id,
+        "date": timestamp,
+        "json": 0
+    }
+    
+    url = f"{HELIOVIEWER_BASE_URL}/v2/getJP2Image/?"
+    encoded_params = urllib.parse.urlencode(params)
+    full_url = url + encoded_params
+
+    async with session.get(full_url) as response:
+        if response.status != 200:
+            raise Exception(f"Failed to fetch image for sourceId {source_id}: {response.status}")
+        return await response.read()
+
+@router.post("/get-image-analyze")
+async def get_and_analyze_images(request: Dict[str, str]):
+    """
+    Fetches JP2 images from Helioviewer based on timestamp and runs analysis.
+    """
+    timestamp = request.get("timestamp")
+    if not timestamp:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Timestamp is required"}
+        )
+
+    # Create temp directories
+    tmp_id = str(uuid.uuid4())
+    print(f"tmp_id: {tmp_id}")
+    input_dir = f"temp_data/{tmp_id}/input_jp2_images"
+    output_dir = f"outputs/{tmp_id}"
+    os.makedirs(input_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Fetch all images concurrently
+    async with aiohttp.ClientSession() as session:
+        tasks = [
+            fetch_jp2_image(session, source_id, timestamp) 
+            for source_id in SOURCE_IDS
+        ]
+        
+        try:
+            jp2_contents = await asyncio.gather(*tasks)
+        except Exception as e:
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Failed to fetch images: {str(e)}"}
+            )
+
+        # Save fetched images
+        for source_id, content in zip(SOURCE_IDS, jp2_contents):
+            file_path = os.path.join(input_dir, f"AIA_{SOURCE_ID_TO_CHANNEL_MAP[source_id]}.jp2")
+            with open(file_path, "wb") as f:
+                f.write(content)
+
+    # Update config for pipeline
+    config["data_dir"] = input_dir
+    config["output_dir"] = output_dir
+
+    try:
+        run_pipeline(config)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500, 
+            content={"error": f"Pipeline failed: {str(e)}"}
+        )
+
+    # Get output files
+    output_files = [
+        f for f in os.listdir(output_dir)
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".tiff"))
+    ]
+
+    if not output_files:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "No output images found"}
+        )
+
+    try:
+        images_data = []
+        for filename in output_files:
+            file_path = Path(output_dir) / filename
+            
+            # Get file size
+            file_size = file_path.stat().st_size
+            
+            # Only encode if file is not too large (e.g., < 10MB)
+            if file_size < 10_000_000:  # 10MB limit
+                with open(file_path, "rb") as img_file:
+                    encoded_image = base64.b64encode(img_file.read()).decode('utf-8')
+                    
+                    images_data.append({
+                        "filename": filename,
+                        "data": encoded_image,
+                        "size": file_size,
+                        "type": "image/" + filename.split('.')[-1].lower()
+                    })
+            else:
+                # For large files, just return metadata
+                images_data.append({
+                    "filename": filename,
+                    "size": file_size,
+                    "type": "image/" + filename.split('.')[-1].lower(),
+                    "error": "File too large for direct transfer"
+                })
+
+        # Cleanup temporary directories
+        shutil.rmtree(input_dir, ignore_errors=True)
+        
+        return {
+            "status": "success",
+            "images": images_data
+        }
+    
+    except Exception as e:
+        # Cleanup on error
+        shutil.rmtree(input_dir, ignore_errors=True)
+        shutil.rmtree(output_dir, ignore_errors=True)
+        
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Files encoding and transfer failed: {str(e)}"}
+        )
 
 @router.post("/analyze")
 async def analyze_jp2(files: List[UploadFile] = File(...)):
