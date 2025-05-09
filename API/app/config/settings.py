@@ -12,7 +12,8 @@ config = {
     "jp2_mask_radius": 1600,
 
     # --- Algorithm Parameters ---
-    "anomaly_thresholds": [0.0, 0.05, 0.1],  # Different thresholds for anomaly detection
+    # "anomaly_thresholds": [0.0, 0.05, 0.1],  # Different thresholds for anomaly detection
+    "anomaly_thresholds": [0.1],  # Different thresholds for anomaly detection
     "contamination": 0.02,  # Proportion of outliers in the data
     "n_clusters": 5,  # Number of clusters for KMeans
     "random_state": 42,  # Random seed for reproducibility

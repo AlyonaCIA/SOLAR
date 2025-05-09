@@ -12,21 +12,23 @@ from app.api.pipeline.model import (
 from app.api.pipeline.preprocess import prepare_data_concatenated
 from app.api.pipeline.visualization import plot_results
 
-# --- Default Configuration ---
-config = {
-    "data_dir": r"D:\OneDrive - Universidad de La Salle\Maestría IA\SOLAR\API\app\api\pipeline\testing_input",
-    "output_dir": "./output_figures",
-    "file_type": "jp2",  
-    "channels": None,  # List of channels like ['94', '131', '171'], or None for all
-    "image_size": 2048,
-    "jp2_mask_radius": 1600,
+from app.config.settings import config
 
-    # --- Algorithm Parameters ---
-    "anomaly_thresholds": [0.0, 0.05, 0.1],  # Different thresholds for anomaly detection
-    "contamination": 0.02,  # Proportion of outliers in the data
-    "n_clusters": 5,  # Number of clusters for KMeans
-    "random_state": 42,  # Random seed for reproducibility
-}
+# --- Default Configuration ---
+# config = {
+#     "data_dir": r"D:\OneDrive - Universidad de La Salle\Maestría IA\SOLAR\API\app\api\pipeline\testing_input",
+#     "output_dir": "./output_figures",
+#     "file_type": "jp2",  
+#     "channels": None,  # List of channels like ['94', '131', '171'], or None for all
+#     "image_size": 2048,
+#     "jp2_mask_radius": 1600,
+
+#     # --- Algorithm Parameters ---
+#     "anomaly_thresholds": [0.1],  # Different thresholds for anomaly detection
+#     "contamination": 0.02,  # Proportion of outliers in the data
+#     "n_clusters": 5,  # Number of clusters for KMeans
+#     "random_state": 42,  # Random seed for reproducibility
+# }
 
 def run_pipeline(config=config):
     """
