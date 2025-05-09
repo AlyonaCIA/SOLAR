@@ -1,0 +1,39 @@
+steps:
+  # Install dependencies and build the image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build', 
+      '-t', 'us-central1-docker.pkg.dev/${PROJECT_ID}/solar-api-repo/solar-api:${_TAG}', 
+      '-f', 'API/Dockerfile',
+      '--build-arg', 'PORT=8080',
+      '.'
+    ]
+  
+  # Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/${PROJECT_ID}/solar-api-repo/solar-api:${_TAG}']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args: [
+      'run', 'deploy', 'solar-api',
+      '--image', 'us-central1-docker.pkg.dev/${PROJECT_ID}/solar-api-repo/solar-api:${_TAG}',
+      '--platform', 'managed',
+      '--region', 'us-central1',
+      '--allow-unauthenticated',
+      '--memory', '4Gi',
+      '--cpu', '2',
+      '--timeout', '300s',
+      '--concurrency', '10',
+      '--port', '8080'
+    ]
+
+substitutions:
+  _TAG: v1.0.0
+
+images:
+  - 'us-central1-docker.pkg.dev/${PROJECT_ID}/solar-api-repo/solar-api:${_TAG}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

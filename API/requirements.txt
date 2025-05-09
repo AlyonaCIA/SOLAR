@@ -9,3 +9,5 @@ sunpy[all]
 tqdm==4.67.1
 uvicorn
 python-multipart
+glymur>=0.9.0
+imageio>=2.19.0

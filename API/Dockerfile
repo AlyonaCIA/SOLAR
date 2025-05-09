@@ -1,18 +1,49 @@
-# Imagen base ligera con Python
+# Base image with Python
 FROM python:3.11-slim
 
-# Establecer directorio de trabajo
+# Install system dependencies including OpenJPEG for JP2 support
+RUN apt-get update && apt-get install -y \
+    libopenjp2-7 \
+    libopenjp2-7-dev \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
 WORKDIR /app
 
-# Copiar los archivos de requerimientos e instalarlos
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Accept PORT as build argument with default value of 8080
+ARG PORT=8080
+ENV PORT=${PORT}
 
-# Copiar el resto de la aplicación
-COPY app ./app
+# Copy the whole project
+COPY . .
 
-# Exponer el puerto donde corre la app
-EXPOSE 8000
+# Install the solar package
+RUN pip install -e .
 
-# Comando para iniciar Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Install API requirements
+RUN pip install --no-cache-dir -r API/requirements.txt
+
+# Create necessary directories
+RUN mkdir -p temp_data outputs
+
+# Change to the API directory
+WORKDIR /app/API
+
+# Create a startup script to help debug module issues
+RUN echo '#!/bin/bash\n\
+echo "Current directory: $(pwd)"\n\
+echo "Directory listing:"\n\
+ls -la\n\
+echo "app directory:"\n\
+ls -la app\n\
+echo "Starting server on port: $PORT"\n\
+exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}' > /app/API/start.sh && \
+chmod +x /app/API/start.sh
+
+# Expose the port
+EXPOSE ${PORT}
+
+# Use the startup script
+CMD ["/app/API/start.sh"]
