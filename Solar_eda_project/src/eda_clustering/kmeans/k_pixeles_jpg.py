@@ -64,7 +64,10 @@ def create_circular_mask_fits(data: np.ndarray, metadata: dict) -> np.ndarray:
 
 # --- JP2 Specific ---
 def load_jp2_data_imageio(channel_dir: str) -> Tuple[Optional[np.ndarray], Optional[Dict]]:
-    """Loads JP2 data using Imageio from a single channel directory. Metadata will always be None."""
+    """Loads JP2 data using Imageio from a single channel directory.
+
+    Metadata will always be None.
+    """
     jp2_files = [f for f in os.listdir(channel_dir) if f.endswith(".jp2")]
     if not jp2_files:
         print(f"Warning: No JP2 files found in: {channel_dir}")
@@ -82,7 +85,8 @@ def load_jp2_data_imageio(channel_dir: str) -> Tuple[Optional[np.ndarray], Optio
     return data, None
 
 def create_circular_mask_jp2(data: np.ndarray, fixed_radius_pixels: int) -> np.ndarray:
-    """Creates a circular mask for JP2 images using a fixed radius, assuming a centered Sun."""
+    """Creates a circular mask for JP2 images using a fixed radius, assuming a centered
+    Sun."""
     if data is None:
         raise ValueError("Input data cannot be None for JP2 mask creation.")
     ny, nx = data.shape

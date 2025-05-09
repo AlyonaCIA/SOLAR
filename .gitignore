@@ -168,3 +168,5 @@ config/dvc_key.json
 API/tests/sdo_data/
 API/tests/testing_input/
 API/temp_data/1b4ffb7c-8eab-4c22-a0ad-d4b8a386bcbc/aia.lev1_euv_12s.2019-03-31T235959Z.94.image.fits
+API/temp_data
+API/outputs
