@@ -3,7 +3,7 @@ import shutil
 import uuid
 from typing import List
 
-from app.api.pipeline.executor import run_pipeline
+from app.api.pipeline.executor import run_pipeline, run_single_channel_pipeline
 from app.config.settings import config
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -67,7 +67,7 @@ async def get_and_analyze_images(request: Dict[str, str]):
         ]
         
         try:
-            jp2_contents = await asyncio.gather(*tasks)
+            jp2_contents = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
             return JSONResponse(
                 status_code=500,
@@ -85,53 +85,39 @@ async def get_and_analyze_images(request: Dict[str, str]):
     config["output_dir"] = output_dir
 
     try:
-        run_pipeline(config)
+        run_single_channel_pipeline(config)
     except Exception as e:
         return JSONResponse(
             status_code=500, 
             content={"error": f"Pipeline failed: {str(e)}"}
         )
 
-    # Get output files
-    output_files = [
-        f for f in os.listdir(output_dir)
-        if f.lower().endswith((".png", ".jpg", ".jpeg", ".tiff"))
-    ]
+    # Get output files - search in channel subdirectories
+    images_data = []
+    for root, dirs, files in os.walk(output_dir):
+        for filename in files:
+            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".tiff")):
+                file_path = Path(root) / filename
+                
+                # Get file size
+                file_size = file_path.stat().st_size
+                
+                # Get relative path from output_dir
+                rel_path = os.path.relpath(file_path, output_dir)
+                
+                images_data.append({
+                    "filename": rel_path,
+                    "size": file_size,
+                    "type": "image/" + filename.split('.')[-1].lower(),
+                })
 
-    if not output_files:
+    if not images_data:
         return JSONResponse(
             status_code=404,
             content={"error": "No output images found"}
         )
 
     try:
-        images_data = []
-        for filename in output_files:
-            file_path = Path(output_dir) / filename
-            
-            # Get file size
-            file_size = file_path.stat().st_size
-            
-            # Only encode if file is not too large (e.g., < 10MB)
-            if file_size < 10_000_000:  # 10MB limit
-                with open(file_path, "rb") as img_file:
-                    encoded_image = base64.b64encode(img_file.read()).decode('utf-8')
-                    
-                    images_data.append({
-                        "filename": filename,
-                        "data": encoded_image,
-                        "size": file_size,
-                        "type": "image/" + filename.split('.')[-1].lower()
-                    })
-            else:
-                # For large files, just return metadata
-                images_data.append({
-                    "filename": filename,
-                    "size": file_size,
-                    "type": "image/" + filename.split('.')[-1].lower(),
-                    "error": "File too large for direct transfer"
-                })
-
         # Cleanup temporary directories
         shutil.rmtree(input_dir, ignore_errors=True)
         
