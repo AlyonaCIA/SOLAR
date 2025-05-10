@@ -137,12 +137,20 @@ def run_pipeline(config=config):
 
 
 
-def run_single_channel_pipeline(config=config):
+def run_single_channel_pipeline(config=config, timestamp=None):
     """
     Executes the entire pipeline for anomaly detection and clustering.
     Each step of the process is printed for clarity.
+
+    Parameters:
+    -----------
+    config : dict
+        Pipeline configuration dictionary
+    timestamp : str, optional
+        Timestamp to use in output filenames. If None, current time will be used.    
     """
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    if timestamp is None:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
     print("Step 0: Creating output directory...\n")
     os.makedirs(config["output_dir"], exist_ok=True)  # Ensure output directory exists

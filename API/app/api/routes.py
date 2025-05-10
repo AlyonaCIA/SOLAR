@@ -14,6 +14,8 @@ from typing import List, Dict
 import urllib.parse
 import base64
 from pathlib import Path
+import datetime
+import re
 
 # Add these constants near the top
 HELIOVIEWER_BASE_URL = "https://api.helioviewer.org"
@@ -50,6 +52,28 @@ async def get_and_analyze_images(request: Dict[str, str]):
             status_code=400,
             content={"error": "Timestamp is required"}
         )
+    # Validate ISO format
+    iso_format = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+    if not re.match(iso_format, timestamp):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Invalid timestamp format",
+                "details": "Timestamp must be in ISO format (YYYY-MM-DDThh:mm:ssZ)",
+                "example": "2024-01-01T12:00:00Z",
+                "received": timestamp
+            }
+        )
+    # Format timestamp for filenames (assuming timestamp is in format like "2024-01-01T12:00:00Z")
+    # Convert from ISO format to our filename format
+    try:
+        dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        formatted_timestamp = dt.strftime("%Y%m%d_%H%M%S")
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid timestamp format: {str(e)}"}
+        )
 
     # Create temp directories
     tmp_id = str(uuid.uuid4())
@@ -85,15 +109,16 @@ async def get_and_analyze_images(request: Dict[str, str]):
     config["output_dir"] = output_dir
 
     try:
-        run_single_channel_pipeline(config)
+        run_single_channel_pipeline(config, formatted_timestamp)
     except Exception as e:
         return JSONResponse(
             status_code=500, 
             content={"error": f"Pipeline failed: {str(e)}"}
         )
 
-    # Get output files - search in channel subdirectories
+    # Get output files - Modified to search in threshold subdirectories
     images_data = []
+    # Walk through all subdirectories in the output directory
     for root, dirs, files in os.walk(output_dir):
         for filename in files:
             if filename.lower().endswith((".png", ".jpg", ".jpeg", ".tiff")):
@@ -105,11 +130,16 @@ async def get_and_analyze_images(request: Dict[str, str]):
                 # Get relative path from output_dir
                 rel_path = os.path.relpath(file_path, output_dir)
                 
+                # Extract threshold from directory name
+                threshold_dir = os.path.basename(os.path.dirname(file_path))
+                
                 images_data.append({
                     "filename": rel_path,
+                    "threshold": threshold_dir.replace("_", "."),
                     "size": file_size,
                     "type": "image/" + filename.split('.')[-1].lower(),
                 })
+                    
 
     if not images_data:
         return JSONResponse(

@@ -236,14 +236,16 @@ def plot_single_channel(
             fontsize='medium'
         )
 
-    # Create channel directory if it doesn't exist
-    channel_dir = os.path.join(output_dir, channel)
-    os.makedirs(channel_dir, exist_ok=True)
+    # Create threshold directory if it doesn't exist
+    # Convert threshold to string and replace dot with underscore
+    threshold_str = f"{anomaly_threshold:.2f}".replace(".", "_")
+    threshold_dir = os.path.join(output_dir, threshold_str)
+    os.makedirs(threshold_dir, exist_ok=True)
 
-    # Save the figure
+    # Save the figure with new naming convention
     filename = os.path.join(
-        channel_dir,
-        f"{channel}_{anomaly_threshold:.2f}_{timestamp}.png"
+        threshold_dir,
+        f"{channel}_{threshold_str}_{timestamp}.png"
     )
     plt.savefig(filename, bbox_inches='tight', dpi=150)
     plt.close(fig)
