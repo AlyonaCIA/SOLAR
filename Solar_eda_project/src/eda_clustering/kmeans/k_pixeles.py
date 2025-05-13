@@ -1,6 +1,7 @@
 import argparse
 import os
 from typing import List, Tuple
+import time
 
 import matplotlib
 import matplotlib.colors
@@ -160,6 +161,7 @@ def plot_results(
     anomaly_pixels_count: int,
     cluster_pixels_counts: List[int],
     cluster_anomaly_percentages: List[float],
+    elapsed_time: float,
     clustering_method_name: str = "K-Means",
 ):
     """Plots and saves anomaly detection and clustering results."""
@@ -167,12 +169,17 @@ def plot_results(
     fig, axes = plt.subplots(num_rows, num_cols, figsize=(18, 15), dpi=100)
     axes = axes.flatten()
 
+    total_pixels = cluster_mask_global.size
+    anomalous_pixels = np.count_nonzero(cluster_mask_global)
+    anomaly_percentage = 100 * anomalous_pixels / total_pixels
+
     anomaly_percentage = (anomaly_pixels_count / total_pixels) * \
         100 if total_pixels > 0 else 0
     fig.suptitle(
         f'{clustering_method_name} Anomaly Clusters in SDO/AIA EUV Channels\n'
-        f'Anomaly Threshold: {anomaly_threshold:.2f} | Anomalous Pixels: {
-            anomaly_pixels_count}/{total_pixels} ({anomaly_percentage:.2f}%)',
+        f'Anomaly Threshold: {anomaly_threshold:.2f} | '
+        f'Anomalous Pixels: {anomaly_pixels_count}/{total_pixels} '
+        f'({anomaly_percentage:.2f}%) | Exec Time: {elapsed_time:.2f}s',
         fontsize=16, y=0.98
     )
 
@@ -262,8 +269,7 @@ def main():
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    channels_arg = ['94', '131', '171', '193', '211', '233',
-                    '304', '335', '700']  # Specify all 9 channels
+    channels_arg = ['94', '131', '171', '193', '211', '304',  '335']
     channels = args.channels if args.channels else [f"aia_{c}" for c in channels_arg]
 
     if not channels:
@@ -298,66 +304,78 @@ def main():
         valid_pixel_mask.reshape((args.image_size, args.image_size))
     ] = anomaly_scores
 
+    # time tracking
+    start_time = time.time()
+
     # Initialize anomaly_mask_global to None here, before the loop
     anomaly_mask_global = None
 
+
     for anomaly_threshold in args.anomaly_thresholds:
         print(f"Processing with anomaly threshold: {anomaly_threshold}")
-        print(f"np.sum(anomaly_mask_global) in main loop: {
-              np.sum(anomaly_mask_global)}")
+
         anomaly_mask_global = anomaly_map_2d < anomaly_threshold
         anomaly_pixels_count = np.sum(anomaly_mask_global)
         total_pixels = args.image_size * args.image_size
         print(f"Total pixels in image: {total_pixels}")
-        print(f"Using user-specified n_clusters = {args.n_clusters}")
 
         anomaly_pixels_indices = np.argwhere(anomaly_mask_global)
         valid_pixel_mask_2d = ~nan_mask.reshape((args.image_size, args.image_size))
         valid_pixel_indices_2d = np.argwhere(valid_pixel_mask_2d)
-        pixel_index_map = {
-            tuple(idx): i for i, idx in enumerate(valid_pixel_indices_2d)}
+        pixel_index_map = {tuple(idx): i for i, idx in enumerate(valid_pixel_indices_2d)}
 
         anomaly_intensity_features = np.array([
-            prepared_data[pixel_index_map[tuple(idx)]] for idx in anomaly_pixels_indices if tuple(idx) in pixel_index_map
+            prepared_data[pixel_index_map[tuple(idx)]]
+            for idx in anomaly_pixels_indices if tuple(idx) in pixel_index_map
         ])
 
         cluster_pixels_counts: List[int] = []
         cluster_anomaly_percentages: List[float] = []
 
         if len(anomaly_intensity_features) > 0:
+            clustering_start = time.time()
             cluster_labels, _ = perform_kmeans_clustering(
                 anomaly_intensity_features, args.n_clusters, args.random_state
             )
+            elapsed_time = time.time() - clustering_start
+
             cluster_mask_global, cluster_cmap_global, cluster_patches_global, n_clusters_global = create_cluster_mask(
                 anomaly_mask_global, cluster_labels, valid_pixel_mask, args.image_size
             )
+
             for cluster_index in range(n_clusters_global):
                 cluster_pixel_count = np.sum(cluster_mask_global == (cluster_index + 1))
                 cluster_pixels_counts.append(cluster_pixel_count)
                 cluster_percentage = (
-                    cluster_pixel_count / anomaly_pixels_count) * 100 if anomaly_pixels_count else 0
+                    cluster_pixel_count / anomaly_pixels_count
+                ) * 100 if anomaly_pixels_count else 0
                 cluster_anomaly_percentages.append(cluster_percentage)
                 print(f"  Cluster {cluster_index + 1}: {cluster_pixel_count} pixels"
-                      f" ({cluster_percentage:.2f}%) of total anomalies")
+                    f" ({cluster_percentage:.2f}%) of total anomalies")
 
-        plot_results(
-            masked_data_list,
-            cluster_mask_global,
-            cluster_cmap_global,
-            n_clusters_global,
-            cluster_patches_global,
-            channel_names,
-            anomaly_threshold,
-            args.output_dir,
-            total_pixels,  # Pass total pixels
-            anomaly_pixels_count,  # Pass anomaly pixel count
-            cluster_pixels_counts,  # Pass cluster pixel counts
-            cluster_anomaly_percentages,  # Pass cluster anomaly percentages
-            clustering_method_name="K-Means"  # Pass clustering method name
-        )
+            end_time = time.time()
 
-    print(f"Plots saved to: {args.output_dir}")
+            plot_results(
+                masked_data_list,
+                cluster_mask_global,
+                cluster_cmap_global,
+                n_clusters_global,
+                cluster_patches_global,
+                channel_names,
+                anomaly_threshold,
+                args.output_dir,
+                total_pixels,
+                anomaly_pixels_count,
+                cluster_pixels_counts,
+                cluster_anomaly_percentages,
+                clustering_method_name="K-Means",
+                elapsed_time=elapsed_time
+            )
+        else:
+            print(f"No anomalies detected above threshold {anomaly_threshold}. Skipping clustering and plotting.")
 
+    print(f"Total execution time: {time.time() - start_time:.2f} seconds")
+    print("All processing completed.")
 
 if __name__ == "__main__":
     main()

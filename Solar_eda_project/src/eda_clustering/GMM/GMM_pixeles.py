@@ -1,7 +1,6 @@
 import argparse
 import os
-from typing import Tuple
-import time
+from typing import List, Tuple
 
 import matplotlib
 import matplotlib.colors
@@ -10,8 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sunpy.map
 from skimage.transform import resize
-from sklearn.cluster import \
-    MiniBatchKMeans  # Changed from KMeans to MiniBatchKMeans
+from sklearn.mixture import GaussianMixture
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import RobustScaler
 
@@ -20,17 +18,9 @@ matplotlib.use('Agg')  # Use Agg backend for saving files
 
 # --- Helper Functions ---
 def load_fits_data(channel_dir: str) -> Tuple[np.ndarray, dict]:
-    """Load FITS data and metadata from a single channel directory. Loads only the
-    *first* FITS file in the directory.
+    """Load FITS data and metadata from a single channel directory.
 
-    Args:
-        channel_dir (str): Path to the channel directory.
-
-    Returns:
-        Tuple[np.ndarray, dict]: Data and metadata from the FITS file.
-
-    Raises:
-        FileNotFoundError: If no FITS files are found in the directory.
+    Loads only the *first* FITS file in the directory.
     """
     fits_files = [
         f for f in os.listdir(channel_dir) if f.endswith(".fits")
@@ -76,7 +66,8 @@ def preprocess_image(
     Args:
         data (np.ndarray): Input image data.
         mask (np.ndarray): Boolean mask for the solar disk.
-        size (int, optional): Desired size of the resized image. If None, no resize. Defaults to None.
+        size (int, optional): Desired size of the resized image. If None, no resize.
+        Defaults to None.
 
     Returns:
         np.ndarray: Preprocessed image data with mask applied and resized.
@@ -149,30 +140,14 @@ def detect_anomalies_isolation_forest(
 
 
 # --- Clustering ---
-def perform_MiniBatch_K_Means_clustering(  # Function name remains the same but now uses MiniBatchKMeans
-    data: np.ndarray, n_clusters: int, random_state: int = 42
-) -> Tuple[np.ndarray, float]:
-    """Performs MiniBatch K-Means clustering. # Updated docstring to reflect
-    MiniBatchKMeans.
-
-    Args:
-        data (np.ndarray): Data to be clustered.
-        n_clusters (int): Number of clusters.
-        random_state (int): Random seed for reproducibility (default: 42).
-
-    Returns:
-        Tuple[np.ndarray, float]:
-            - labels: Cluster labels for each data point.
-            - inertia: Sum of squared distances to closest centroid.
-    """
-    kmeans = MiniBatchKMeans(  # Changed KMeans to MiniBatchKMeans
-        n_clusters=n_clusters,
-        random_state=random_state,
-        n_init=10,  # Reduced n_init for MiniBatchKMeans as it's faster
-        batch_size=256  # Added batch_size for MiniBatchKMeans
-    )
-    kmeans.fit(data)
-    return kmeans.labels_, kmeans.inertia_
+def perform_gmm_clustering(
+    data: np.ndarray,
+    n_clusters: int,
+    random_state: int = 42) -> Tuple[np.ndarray, float]:
+    """Performs Gaussian Mixture Model clustering."""
+    gmm = GaussianMixture(n_components=n_clusters, random_state=random_state)
+    labels = gmm.fit_predict(data)
+    return labels, gmm.lower_bound_
 
 
 def determine_optimal_k_elbow(
@@ -190,7 +165,7 @@ def determine_optimal_k_elbow(
     """
     inertias = []
     for k in range(1, max_k + 1):
-        _, inertia =perform_MiniBatch_K_Means_clustering(data, k, random_state)
+        _, inertia = perform_kmeans_clustering(data, k, random_state)
         inertias.append(inertia)
 
     # Plot the Elbow curve
@@ -317,9 +292,10 @@ def plot_results(
     output_dir: str,
     total_pixels: int,  # Added total_pixels
     anomaly_pixels_count: int,  # Added anomaly_pixels_count
-    elapsed_time: float,
+    cluster_pixels_counts: List[int],  # Added cluster_pixels_counts
+    cluster_anomaly_percentages: List[float],  # Added cluster_anomaly_percentages
     # Added clustering_method_name with default "K-Means"
-    clustering_method_name: str = "mini_batch_kmeans",
+    clustering_method_name: str = "Gaussian Mixture Model"
 ):
     """Plots and saves the results, overlaying global clusters on each channel.
 
@@ -334,6 +310,8 @@ def plot_results(
         output_dir (str): Directory to save output figures.
         total_pixels (int): Total number of pixels in the image. # Added
         anomaly_pixels_count (int): Number of anomaly pixels detected. # Added
+        cluster_pixels_counts (List[int]): Pixel counts for each cluster. # Added
+        cluster_anomaly_percentages (List[float]): Anomaly percentage per cluster. # Added
         clustering_method_name (str): Name of the clustering method used. # Added
     """
     num_rows, num_cols = 3, 3
@@ -342,18 +320,15 @@ def plot_results(
     )
     axes = axes.flatten()
 
-    total_pixels = cluster_mask_global.size
-    anomalous_pixels = np.count_nonzero(cluster_mask_global)
-    anomaly_percentage = 100 * anomalous_pixels / total_pixels
-
     anomaly_percentage = (anomaly_pixels_count / total_pixels) * \
         100 if total_pixels > 0 else 0  # Calculate percentage
     fig.suptitle(
-        f'minibatch k-means Anomaly Clusters in SDO/AIA JP2 Channels\n'
+        # Added clustering method name to title
+        f'Anomaly Detection with {clustering_method_name} Clustering\n'
         f'Anomaly Threshold: {anomaly_threshold:.2f} | '
-        f'Anomalous Pixels: {anomalous_pixels:,}/{total_pixels:,} '
-        f'({anomaly_percentage:.2f}%) | Exec Time: {elapsed_time:.2f}s',
-        fontsize=16
+        f'Total Anomalous Pixels: {anomaly_pixels_count} / {total_pixels} '
+        f'({anomaly_percentage:.2f}%)',  # Added anomaly info to title
+        fontsize=18
     )
 
     for i, (masked_data, channel) in enumerate(
@@ -390,10 +365,21 @@ def plot_results(
                         vmax=cluster_index + 0.5
                     )
 
+            title_text_lines = [f'AIA {channel} Å']  # Start with channel name
+            if cluster_pixels_counts and cluster_anomaly_percentages and cluster_index <= len(
+                    cluster_pixels_counts):
+                # Get pixel count for *current* cluster
+                cluster_pixels = cluster_pixels_counts[cluster_index - 1]
+                # Get anomaly percentage for *current* cluster
+                cluster_percentage = cluster_anomaly_percentages[cluster_index - 1]
+                title_text_lines.append(f'Cluster {cluster_index}: {cluster_pixels} Pixels ({
+                                        cluster_percentage:.2f}%)')  # Add line with cluster info
+
             ax.set_title(
-                f'AIA {channel} Å (Global Clusters: {n_clusters_global})',
+                # Join lines with newline for multiline title
+                "\n".join(title_text_lines),
                 color='black',
-                fontsize=14,
+                fontsize=12,  # Slightly smaller fontsize for multiline titles
                 pad=10
             )
             ax.text(
@@ -429,8 +415,8 @@ def plot_results(
 
     filename = os.path.join(
         output_dir,
-        f"minibatch_kmeans_anomaly_detection_threshold_{
-            anomaly_threshold:.2f}"  # Changed filename to minibatch_kmeans
+        f"GMM_kmeans_anomaly_detection_threshold_{
+            anomaly_threshold:.2f}"  # Changed filename to GMM
         "_global_clusters.png"
     )
     plt.savefig(filename, bbox_inches='tight')
@@ -443,7 +429,7 @@ def main():
     """Main function to execute SDO/AIA anomaly detection pipeline."""
     parser = argparse.ArgumentParser(
         description="SDO/AIA Anomaly Detection using Isolation Forest"
-        " and MiniBatch K-Means Clustering"  # Updated description
+        " and GMM"  # Updated description
     )
     parser.add_argument(
         "--data_dir",
@@ -488,7 +474,7 @@ def main():
         "--n_clusters",
         type=int,
         default=7,  # Changed default to 7 clusters
-        help="Number of clusters for minibatch K-Means. If None, use Elbow method."
+        help="Number of clusters for K-Means. If None, use Elbow method."
     )
     parser.add_argument(
         "--max_k",
@@ -507,6 +493,23 @@ def main():
         action='store_true',
         help="Do not resize images, use original size."
     )
+
+    parser = argparse.ArgumentParser(
+        description="SDO/AIA Anomaly Detection using Isolation Forest and GMM Clustering"
+    )
+    parser.add_argument("--data_dir", type=str, default="Data/sdo_data", help="Path to the directory containing SDO/AIA data.")
+    parser.add_argument("--channels", type=str, nargs='+', default=None, help="List of AIA channels (e.g., '94' '131'). If None, use all except 1600 and 1700.")
+    parser.add_argument("--anomaly_thresholds", type=float, nargs='+', default=[0.1], help="Threshold(s) for anomaly detection. Lower values more sensitive.")
+    parser.add_argument("--output_dir", type=str, default="./output_figures", help="Directory to save output figures.")
+    parser.add_argument("--image_size", type=int, default=512, help="Size to resize images to. Ignored if --no_resize is used.")
+    parser.add_argument("--contamination", type=float, default=0.05, help="Estimated proportion of anomalies.")
+    parser.add_argument("--n_clusters", type=int, default=7, help="Number of clusters for K-Means. If None, use Elbow method.")
+    parser.add_argument("--max_k", type=int, default=10, help="Maximum number of clusters to test with Elbow method.")
+    parser.add_argument("--random_state", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--no_resize", action='store_true', help="Do not resize images, use original size.")
+
+    args = parser.parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
 
     args = parser.parse_args()
 
@@ -575,9 +578,6 @@ def main():
         (current_image_size, current_image_size))  # Use current_image_size
     anomaly_map_2d[valid_pixel_mask_2d_reshaped] = anomaly_scores
 
-    # time tracking
-    start_time = time.time()
-
     # --- 5. Loop Through Anomaly Thresholds ---
     for anomaly_threshold in args.anomaly_thresholds:
         print(f"Processing with anomaly threshold: {anomaly_threshold}")
@@ -588,7 +588,7 @@ def main():
         print(f"np.sum(anomaly_mask_global) in main loop: {anomaly_pixels_count}")
         print(f"Total pixels in image: {total_pixels}")
 
-        # --- 6. Clustering (MiniBatch K-Means) --- # Changed comment to reflect MiniBatchKMeans
+        # --- 6. Clustering GMM ---
         anomaly_pixels_indices = np.argwhere(anomaly_mask_global)
 
         # Map anomaly pixel indices to rows in prepared data (critical step)
@@ -613,14 +613,16 @@ def main():
         anomaly_intensity_features = np.array(anomaly_intensity_features)
         valid_anomaly_pixel_indices = np.array(valid_anomaly_pixel_indices)
 
+        cluster_pixels_counts = []  # Initialize lists to store cluster pixel counts and percentages
+        cluster_anomaly_percentages = []
+
         if len(anomaly_intensity_features) > 0:  # Proceed if valid anomalies
 
             n_clusters_to_use = args.n_clusters  # Use n_clusters (default 7)
             print(f"Using user-specified n_clusters = {n_clusters_to_use}")
 
-            # Perform MiniBatch K-Means Clustering # Changed comment to reflect
-            # MiniBatchKMeans
-            cluster_labels, _ =  perform_MiniBatch_K_Means_clustering( # Function name is still perform_kmeans_clustering but now uses MiniBatchKMeans
+            # Perform GMM
+            cluster_labels, _ = perform_gmm_clustering(
                 anomaly_intensity_features,
                 n_clusters_to_use,
                 args.random_state
@@ -635,6 +637,20 @@ def main():
                     current_image_size  # Pass current image size
                 )
 
+            # Calculate cluster pixel counts and anomaly percentages
+            for cluster_index in range(n_clusters_global):
+                cluster_pixel_count = np.sum(cluster_mask_global == (
+                    cluster_index + 1))  # Count pixels in cluster
+                cluster_pixels_counts.append(
+                    cluster_pixel_count)  # Append count to list
+                cluster_percentage = (
+                    cluster_pixel_count / anomaly_pixels_count) * 100 if anomaly_pixels_count > 0 else 0
+                cluster_anomaly_percentages.append(
+                    cluster_percentage)  # Append percentage to list
+                print(f"  Cluster {cluster_index + 1}: {cluster_pixel_count} pixels"
+                      # Report cluster pixel count and percentage
+                      f" ({cluster_percentage:.2f}%) of total anomalies")
+
         else:  # Handle case where no anomalies are detected
             print(f"No anomalies found for threshold {anomaly_threshold}.")
             cluster_mask_global = np.zeros_like(
@@ -643,10 +659,6 @@ def main():
             cluster_cmap_global = matplotlib.colors.ListedColormap([])
             cluster_patches_global = []
             n_clusters_global = 0
-
-        elapsed_time = time.time() - start_time
-        print(f"Execution time for threshold {anomaly_threshold:.2f}: {elapsed_time:.2f} seconds")
-
 
         # --- 7. Plotting and Saving Results ---
         plot_results(
@@ -660,9 +672,10 @@ def main():
             args.output_dir,
             total_pixels,  # Pass total pixels
             anomaly_pixels_count,  # Pass anomaly pixel count
+            cluster_pixels_counts,  # Pass cluster pixel counts
+            cluster_anomaly_percentages,  # Pass cluster anomaly percentages
             # Added clustering_method_name for plot title
-            clustering_method_name="MiniBatch K-Means",
-            elapsed_time=elapsed_time
+            clustering_method_name="Gaussian Mixture Model"
         )
 
 

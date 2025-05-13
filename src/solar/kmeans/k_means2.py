@@ -1,6 +1,7 @@
 import argparse
 import os
 from typing import Tuple
+import time
 
 import matplotlib
 import matplotlib.colors
@@ -302,7 +303,8 @@ def plot_results(
     cluster_patches_global: list,
     channel_names: list,
     anomaly_threshold: float,
-    output_dir: str
+    output_dir: str,
+    elapsed_time: float
 ):
     """Plots and saves the results, overlaying global clusters on each channel.
 
@@ -322,10 +324,17 @@ def plot_results(
     )
     axes = axes.flatten()
 
+    total_pixels = cluster_mask_global.size
+    anomalous_pixels = np.count_nonzero(cluster_mask_global)
+    anomaly_percentage = 100 * anomalous_pixels / total_pixels
+
+
     fig.suptitle(
-        f'Anomaly Detection in SDO/AIA EUV Channels (K-Means)\n'
-        f'Anomaly Threshold: {anomaly_threshold:.2f}',
-        fontsize=18
+        f'K-Means Anomaly Clusters in SDO/AIA JP2 Channels\n'
+        f'Anomaly Threshold: {anomaly_threshold:.2f} | '
+        f'Anomalous Pixels: {anomalous_pixels:,}/{total_pixels:,} '
+        f'({anomaly_percentage:.2f}%) | Exec Time: {elapsed_time:.2f}s',
+        fontsize=16
     )
 
     for i, (masked_data, channel) in enumerate(
@@ -419,7 +428,7 @@ def main():
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="src/Data/sdo_data",  # Changed default path here
+        default="/home/alyonaivanova/personal/SOLAR/Data/sdo_data",  # Changed default path here
         help="Path to the directory containing SDO/AIA data."
     )
     parser.add_argument(
@@ -531,6 +540,9 @@ def main():
         valid_pixel_mask.reshape((args.image_size, args.image_size))
     ] = anomaly_scores
 
+    # Time tracking
+    start_time = time.time()
+
     # --- 5. Loop Through Anomaly Thresholds ---
     for anomaly_threshold in args.anomaly_thresholds:
         print(f"Processing with anomaly threshold: {anomaly_threshold}")
@@ -593,6 +605,11 @@ def main():
             cluster_patches_global = []
             n_clusters_global = 0
 
+        # Time tracking
+        elapsed_time = time.time() - start_time
+        print(f"Execution time for threshold {anomaly_threshold:.2f}: {elapsed_time:.2f} seconds")
+
+
         # --- 7. Plotting and Saving Results ---
         plot_results(
             masked_data_list,
@@ -602,7 +619,8 @@ def main():
             cluster_patches_global,
             channel_names,
             anomaly_threshold,
-            args.output_dir
+            args.output_dir,
+            elapsed_time
         )
 
 

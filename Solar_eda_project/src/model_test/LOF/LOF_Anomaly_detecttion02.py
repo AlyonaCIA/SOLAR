@@ -1,6 +1,8 @@
 import argparse
 import os
-from typing import List, Tuple
+from typing import Tuple
+import time
+
 
 import matplotlib
 import matplotlib.colors
@@ -9,9 +11,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sunpy.map
 from skimage.transform import resize
-from sklearn.cluster import \
-    MiniBatchKMeans  # Changed from KMeans to MiniBatchKMeans
-from sklearn.ensemble import IsolationForest
+from sklearn.cluster import KMeans
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import RobustScaler
 
 matplotlib.use('Agg')  # Use Agg backend for saving files
@@ -19,9 +20,17 @@ matplotlib.use('Agg')  # Use Agg backend for saving files
 
 # --- Helper Functions ---
 def load_fits_data(channel_dir: str) -> Tuple[np.ndarray, dict]:
-    """Load FITS data and metadata from a single channel directory.
+    """Load FITS data and metadata from a single channel directory. Loads only the
+    *first* FITS file in the directory.
 
-    Loads only the *first* FITS file in the directory.
+    Args:
+        channel_dir (str): Path to the channel directory.
+
+    Returns:
+        Tuple[np.ndarray, dict]: Data and metadata from the FITS file.
+
+    Raises:
+        FileNotFoundError: If no FITS files are found in the directory.
     """
     fits_files = [
         f for f in os.listdir(channel_dir) if f.endswith(".fits")
@@ -60,32 +69,27 @@ def create_circular_mask(data: np.ndarray, metadata: dict) -> np.ndarray:
 
 
 def preprocess_image(
-    data: np.ndarray, mask: np.ndarray, size: int = None
+    data: np.ndarray, mask: np.ndarray, size: int = 512
 ) -> np.ndarray:
     """Resizes the image and applies the mask, setting masked areas to NaN.
 
     Args:
         data (np.ndarray): Input image data.
         mask (np.ndarray): Boolean mask for the solar disk.
-        size (int, optional): Desired size of the resized image. If None, no resize. Defaults to None.
+        size (int): Desired size of the resized image (default: 512).
 
     Returns:
         np.ndarray: Preprocessed image data with mask applied and resized.
     """
-    if size is not None:
-        resized_data = resize(
-            data, (size, size), mode='reflect', anti_aliasing=True
-        )
-        resized_mask = resize(
-            mask, (size, size), mode='reflect', anti_aliasing=False
-        ) > 0.5
-        masked_data = resized_data.copy()
-        masked_data[~resized_mask] = np.nan  # Apply mask
-        return masked_data
-    else:
-        masked_data = data.copy()
-        masked_data[~mask] = np.nan  # Apply original mask
-        return masked_data
+    resized_data = resize(
+        data, (size, size), mode='reflect', anti_aliasing=True
+    )
+    resized_mask = resize(
+        mask, (size, size), mode='reflect', anti_aliasing=False
+    ) > 0.5
+    masked_data = resized_data.copy()
+    masked_data[~resized_mask] = np.nan  # Apply mask
+    return masked_data
 
 
 # --- Data Preparation and Anomaly Detection ---
@@ -118,33 +122,37 @@ def prepare_data_concatenated(
     return scaled_data, ~nan_mask, nan_mask
 
 
-def detect_anomalies_isolation_forest(
-    data: np.ndarray, contamination: float, random_state: int
+def detect_anomalies_lof(
+    data: np.ndarray, contamination: float, n_neighbors: int = 20
 ) -> np.ndarray:
-    """Detects anomalies using Isolation Forest and returns anomaly scores.
+    """Detects anomalies using Local Outlier Factor and returns anomaly scores.
 
     Args:
         data (np.ndarray): Input data for anomaly detection.
         contamination (float): Expected proportion of anomalies in the data.
-        random_state (int): Random seed for reproducibility. # Added random_state
+        n_neighbors (int): Number of neighbors to consider (default: 20).
 
     Returns:
         np.ndarray: Anomaly scores for each data point.
-                     Lower scores indicate higher anomaly.
+                   Lower (more negative) scores indicate higher anomaly.
     """
-    iso_forest = IsolationForest(
-        contamination=contamination, random_state=random_state  # Use random_state here
+    lof = LocalOutlierFactor(
+        n_neighbors=n_neighbors,
+        contamination=contamination,
+        novelty=True,  # We'll fit and then compute decision function
+        n_jobs=-1  # Use all available processors
     )
-    iso_forest.fit(data)
-    return iso_forest.decision_function(data)  # Return anomaly *scores*
+    lof.fit(data)
+    # Negate scores to make interpretation consistent with Isolation Forest
+    # (lower = more anomalous)
+    return -lof.decision_function(data)
 
 
 # --- Clustering ---
-def perform_kmeans_clustering(  # Function name remains the same but now uses MiniBatchKMeans
+def perform_kmeans_clustering(
     data: np.ndarray, n_clusters: int, random_state: int = 42
 ) -> Tuple[np.ndarray, float]:
-    """Performs MiniBatch K-Means clustering. # Updated docstring to reflect
-    MiniBatchKMeans.
+    """Performs K-Means clustering.
 
     Args:
         data (np.ndarray): Data to be clustered.
@@ -156,12 +164,11 @@ def perform_kmeans_clustering(  # Function name remains the same but now uses Mi
             - labels: Cluster labels for each data point.
             - inertia: Sum of squared distances to closest centroid.
     """
-    kmeans = MiniBatchKMeans(  # Changed KMeans to MiniBatchKMeans
+    kmeans = KMeans(
         n_clusters=n_clusters,
         random_state=random_state,
-        n_init=10,  # Reduced n_init for MiniBatchKMeans as it's faster
-        batch_size=256  # Added batch_size for MiniBatchKMeans
-    )
+        n_init=20
+    )  # Use n_init for multiple initializations
     kmeans.fit(data)
     return kmeans.labels_, kmeans.inertia_
 
@@ -208,7 +215,7 @@ def create_cluster_mask(
     anomaly_mask: np.ndarray,
     labels: np.ndarray,
     valid_pixel_mask: np.ndarray,
-    image_size: int  # image_size is still passed but not strictly used anymore
+    image_size: int
 ) -> Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
     """Creates a 2D cluster mask from anomaly mask and cluster labels.
 
@@ -216,7 +223,7 @@ def create_cluster_mask(
         anomaly_mask (np.ndarray): 2D boolean mask of anomaly pixels.
         labels (np.ndarray): Cluster labels for each anomaly pixel.
         valid_pixel_mask (np.ndarray): 1D boolean mask of valid pixels.
-        image_size (int): Size of the image (height/width). - Not strictly used anymore, derived from anomaly_mask
+        image_size (int): Size of the image (height/width).
 
     Returns:
         Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
@@ -249,9 +256,7 @@ def create_cluster_mask(
         )
 
         # Create 2D masks for easier indexing
-        current_image_size = anomaly_mask.shape[0]  # Get image size from anomaly mask
-        valid_pixel_mask_2d = valid_pixel_mask.reshape(
-            (current_image_size, current_image_size))
+        valid_pixel_mask_2d = valid_pixel_mask.reshape((image_size, image_size))
         anomaly_pixels_indices = np.argwhere(anomaly_mask)  # 2D anomaly indices
         print(f"len(anomaly_pixels_indices): {len(anomaly_pixels_indices)}")
         # Should be same as np.sum(anomaly_mask)
@@ -306,12 +311,7 @@ def plot_results(
     channel_names: list,
     anomaly_threshold: float,
     output_dir: str,
-    total_pixels: int,  # Added total_pixels
-    anomaly_pixels_count: int,  # Added anomaly_pixels_count
-    cluster_pixels_counts: List[int],  # Added cluster_pixels_counts
-    cluster_anomaly_percentages: List[float],  # Added cluster_anomaly_percentages
-    # Added clustering_method_name with default "K-Means"
-    clustering_method_name: str = "K-Means"
+    elapsed_time: float
 ):
     """Plots and saves the results, overlaying global clusters on each channel.
 
@@ -323,12 +323,7 @@ def plot_results(
         cluster_patches_global (list): Legend patches for global clusters.
         channel_names (list): List of channel names (wavelengths).
         anomaly_threshold (float): Anomaly threshold used.
-        output_dir (str): Directory to save output figures.
-        total_pixels (int): Total number of pixels in the image. # Added
-        anomaly_pixels_count (int): Number of anomaly pixels detected. # Added
-        cluster_pixels_counts (List[int]): Pixel counts for each cluster. # Added
-        cluster_anomaly_percentages (List[float]): Anomaly percentage per cluster. # Added
-        clustering_method_name (str): Name of the clustering method used. # Added
+        output_dir (str): Directory to save the output figure.
     """
     num_rows, num_cols = 3, 3
     fig, axes = plt.subplots(
@@ -336,15 +331,17 @@ def plot_results(
     )
     axes = axes.flatten()
 
-    anomaly_percentage = (anomaly_pixels_count / total_pixels) * \
-        100 if total_pixels > 0 else 0  # Calculate percentage
+    total_pixels = cluster_mask_global.size
+    anomalous_pixels = np.count_nonzero(cluster_mask_global)
+    anomaly_percentage = 100 * anomalous_pixels / total_pixels
+
+
     fig.suptitle(
-        # Added clustering method name to title
-        f'Anomaly Detection with {clustering_method_name} Clustering\n'
+        f'K-Means Anomaly Clusters in SDO/AIA JP2 Channels\n'
         f'Anomaly Threshold: {anomaly_threshold:.2f} | '
-        f'Total Anomalous Pixels: {anomaly_pixels_count} / {total_pixels} '
-        f'({anomaly_percentage:.2f}%)',  # Added anomaly info to title
-        fontsize=18
+        f'Anomalous Pixels: {anomalous_pixels:,}/{total_pixels:,} '
+        f'({anomaly_percentage:.2f}%) | Exec Time: {elapsed_time:.2f}s',
+        fontsize=16
     )
 
     for i, (masked_data, channel) in enumerate(
@@ -360,7 +357,7 @@ def plot_results(
                 cmap='YlOrBr',  # Pastel yellow/orange for the sun
                 vmin=np.nanpercentile(masked_data, 2),
                 vmax=np.nanpercentile(masked_data, 98),
-                alpha=0.5
+                alpha=0.3
             )
 
             # Overlay the GLOBAL cluster mask (only color cluster areas)
@@ -381,21 +378,10 @@ def plot_results(
                         vmax=cluster_index + 0.5
                     )
 
-            title_text_lines = [f'AIA {channel} Å']  # Start with channel name
-            if cluster_pixels_counts and cluster_anomaly_percentages and cluster_index <= len(
-                    cluster_pixels_counts):
-                # Get pixel count for *current* cluster
-                cluster_pixels = cluster_pixels_counts[cluster_index - 1]
-                # Get anomaly percentage for *current* cluster
-                cluster_percentage = cluster_anomaly_percentages[cluster_index - 1]
-                title_text_lines.append(f'Cluster {cluster_index}: {cluster_pixels} Pixels ({
-                                        cluster_percentage:.2f}%)')  # Add line with cluster info
-
             ax.set_title(
-                # Join lines with newline for multiline title
-                "\n".join(title_text_lines),
+                f'AIA {channel} Å (Global Clusters: {n_clusters_global})',
                 color='black',
-                fontsize=12,  # Slightly smaller fontsize for multiline titles
+                fontsize=14,
                 pad=10
             )
             ax.text(
@@ -431,8 +417,7 @@ def plot_results(
 
     filename = os.path.join(
         output_dir,
-        f"minibatch_kmeans_anomaly_detection_threshold_{
-            anomaly_threshold:.2f}"  # Changed filename to minibatch_kmeans
+        f"lof_kmeans_anomaly_detection_threshold_{anomaly_threshold:.2f}"
         "_global_clusters.png"
     )
     plt.savefig(filename, bbox_inches='tight')
@@ -440,17 +425,103 @@ def plot_results(
     print(f"Figure saved to: {filename}")
 
 
+# --- Additional Analysis Functions ---
+def compute_feature_importance(
+    anomaly_data: np.ndarray,
+    non_anomaly_data: np.ndarray,
+    channel_names: list,
+    output_dir: str
+):
+    """Computes and plots feature importance for each channel.
+
+    Args:
+        anomaly_data (np.ndarray): Data points classified as anomalies.
+        non_anomaly_data (np.ndarray): Data points classified as normal.
+        channel_names (list): List of channel names.
+        output_dir (str): Directory to save the output figure.
+    """
+    if len(anomaly_data) == 0 or len(non_anomaly_data) == 0:
+        print("Cannot compute feature importance: insufficient data")
+        return
+
+    # Calculate mean difference between anomalies and non-anomalies for each feature
+    anomaly_means = np.mean(anomaly_data, axis=0)
+    non_anomaly_means = np.mean(non_anomaly_data, axis=0)
+    mean_diffs = np.abs(anomaly_means - non_anomaly_means)
+
+    # Normalize to get relative importance
+    importance = mean_diffs / np.sum(mean_diffs)
+
+    # Plot feature importance
+    plt.figure(figsize=(10, 6))
+    plt.bar(channel_names, importance)
+    plt.title('Channel Importance in Anomaly Detection')
+    plt.xlabel('Channel (Wavelength Å)')
+    plt.ylabel('Relative Importance')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    filename = os.path.join(output_dir, "channel_importance.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"Feature importance plot saved to: {filename}")
+
+    return importance
+
+
+def plot_anomaly_distribution(
+    anomaly_scores: np.ndarray,
+    anomaly_threshold: float,
+    output_dir: str
+):
+    """Plots the distribution of anomaly scores.
+
+    Args:
+        anomaly_scores (np.ndarray): LOF anomaly scores.
+        anomaly_threshold (float): Threshold used for anomaly detection.
+        output_dir (str): Directory to save the output figure.
+    """
+    plt.figure(figsize=(10, 6))
+
+    # Plot histogram of anomaly scores
+    plt.hist(anomaly_scores, bins=50, alpha=0.7)
+
+    # Add vertical line for threshold
+    plt.axvline(x=anomaly_threshold, color='red', linestyle='--',
+                label=f'Threshold: {anomaly_threshold:.2f}')
+
+    # Annotate anomaly percentage
+    anomaly_percentage = 100 * np.sum(anomaly_scores < anomaly_threshold) / len(anomaly_scores)
+    plt.text(
+        anomaly_threshold + 0.1,
+        plt.ylim()[1] * 0.9,
+        f'{anomaly_percentage:.2f}% anomalies',
+        color='red'
+    )
+
+    plt.title('Distribution of LOF Anomaly Scores')
+    plt.xlabel('Anomaly Score (lower = more anomalous)')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    filename = os.path.join(output_dir, f"lof_score_distribution_threshold_{anomaly_threshold:.2f}.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"Anomaly score distribution plot saved to: {filename}")
+
+
 # --- Main Execution ---
 def main():
-    """Main function to execute SDO/AIA anomaly detection pipeline."""
+    """Main function to execute SDO/AIA anomaly detection pipeline using LOF."""
     parser = argparse.ArgumentParser(
-        description="SDO/AIA Anomaly Detection using Isolation Forest"
-        " and MiniBatch K-Means Clustering"  # Updated description
+        description="SDO/AIA Anomaly Detection using Local Outlier Factor (LOF)"
+        " and K-Means Clustering"
     )
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="Data/sdo_data",  # Changed default path here
+        default="/home/alyonaivanova/personal/SOLAR/Data/sdo_data",
         help="Path to the directory containing SDO/AIA data."
     )
     parser.add_argument(
@@ -478,18 +549,18 @@ def main():
         "--image_size",
         type=int,
         default=512,
-        help="Size to resize images to. Ignored if --no_resize is used."
+        help="Size to resize images to."
     )
     parser.add_argument(
         "--contamination",
         type=float,
-        default=0.05,
+        default=0.01,
         help="Estimated proportion of anomalies."
     )
     parser.add_argument(
         "--n_clusters",
         type=int,
-        default=7,  # Changed default to 7 clusters
+        default=5,
         help="Number of clusters for K-Means. If None, use Elbow method."
     )
     parser.add_argument(
@@ -497,7 +568,7 @@ def main():
         type=int,
         default=10,
         help="Maximum number of clusters to test with Elbow method."
-    )  # Added max_k
+    )
     parser.add_argument(
         "--random_state",
         type=int,
@@ -505,9 +576,15 @@ def main():
         help="Random seed for reproducibility"
     )
     parser.add_argument(
-        "--no_resize",
-        action='store_true',
-        help="Do not resize images, use original size."
+        "--n_neighbors",
+        type=int,
+        default=20,
+        help="Number of neighbors for LOF algorithm."
+    )
+    parser.add_argument(
+        "--compute_importance",
+        action="store_true",
+        help="Compute and plot feature importance of each channel."
     )
 
     args = parser.parse_args()
@@ -533,12 +610,6 @@ def main():
     # --- 2. Load and Preprocess Data for All Channels ---
     masked_data_list = []
     channel_names = []
-    # Determine size, None if no_resize
-    image_size_for_processing = args.image_size if not args.no_resize else None
-    # Initialize, will be updated if no_resize
-    current_image_size = args.image_size if not args.no_resize else None
-    original_image_size = None  # To store original image size if not resizing
-
     for channel_dir in channels:
         try:
             channel = channel_dir.split("_")[1]
@@ -547,12 +618,9 @@ def main():
             data, metadata = load_fits_data(channel_path)
             mask = create_circular_mask(data, metadata)
             masked_data = preprocess_image(
-                data, mask, image_size_for_processing  # Pass size, can be None
+                data, mask, args.image_size
             )
             masked_data_list.append(masked_data)
-            if args.no_resize:
-                # Update to original size if no resize
-                current_image_size = data.shape[0]
         except Exception as e:
             print(f"Error processing {channel_dir}: {e}")
 
@@ -565,34 +633,38 @@ def main():
         prepare_data_concatenated(masked_data_list)
     )
 
-    # --- 4. Anomaly Detection (One-time calculation) ---
-    anomaly_scores = detect_anomalies_isolation_forest(
-        prepared_data, args.contamination, args.random_state
+    # --- 4. Anomaly Detection with LOF ---
+    print(f"Running LOF with {args.n_neighbors} neighbors and contamination {args.contamination}...")
+    anomaly_scores = detect_anomalies_lof(
+        prepared_data, args.contamination, args.n_neighbors
     )
 
     # Create a 2D anomaly map (for visualization)
-    # Use current_image_size
-    anomaly_map_2d = np.full((current_image_size, current_image_size), np.nan)
-    valid_pixel_mask_2d_reshaped = valid_pixel_mask.reshape(
-        (current_image_size, current_image_size))  # Use current_image_size
-    anomaly_map_2d[valid_pixel_mask_2d_reshaped] = anomaly_scores
+    anomaly_map_2d = np.full((args.image_size, args.image_size), np.nan)
+    anomaly_map_2d[
+        valid_pixel_mask.reshape((args.image_size, args.image_size))
+    ] = anomaly_scores
+
+    # time.sleep(1)  # Simulate some processing time
+    start_time = time.time()
+
+    # Plot distribution of anomaly scores
+    for anomaly_threshold in args.anomaly_thresholds:
+        plot_anomaly_distribution(anomaly_scores, anomaly_threshold, args.output_dir)
 
     # --- 5. Loop Through Anomaly Thresholds ---
     for anomaly_threshold in args.anomaly_thresholds:
         print(f"Processing with anomaly threshold: {anomaly_threshold}")
         anomaly_mask_global = anomaly_map_2d < anomaly_threshold
         # Global anomaly mask
-        anomaly_pixels_count = np.sum(anomaly_mask_global)  # Count anomaly pixels
-        total_pixels = current_image_size * current_image_size  # Calculate total pixels
-        print(f"np.sum(anomaly_mask_global) in main loop: {anomaly_pixels_count}")
-        print(f"Total pixels in image: {total_pixels}")
+        print(f"np.sum(anomaly_mask_global) in main loop:"
+              f" {np.sum(anomaly_mask_global)}")  # add
 
-        # --- 6. Clustering (MiniBatch K-Means) --- # Changed comment to reflect MiniBatchKMeans
+        # --- 6. Clustering (K-Means) ---
         anomaly_pixels_indices = np.argwhere(anomaly_mask_global)
 
         # Map anomaly pixel indices to rows in prepared data (critical step)
-        valid_pixel_mask_2d = ~nan_mask.reshape(
-            (current_image_size, current_image_size))  # Use current_image_size
+        valid_pixel_mask_2d = ~nan_mask.reshape((args.image_size, args.image_size))
         valid_pixel_indices_2d = np.argwhere(valid_pixel_mask_2d)
         pixel_index_map = {
             tuple(index_2d): i for i, index_2d in enumerate(valid_pixel_indices_2d)
@@ -612,20 +684,46 @@ def main():
         anomaly_intensity_features = np.array(anomaly_intensity_features)
         valid_anomaly_pixel_indices = np.array(valid_anomaly_pixel_indices)
 
-        cluster_pixels_counts = []  # Initialize lists to store cluster pixel counts and percentages
-        cluster_anomaly_percentages = []
-
         if len(anomaly_intensity_features) > 0:  # Proceed if valid anomalies
 
-            n_clusters_to_use = args.n_clusters  # Use n_clusters (default 7)
+            # Compute feature importance if requested
+            if args.compute_importance:
+                # Get non-anomaly data for comparison
+                non_anomaly_mask = ~anomaly_mask_global
+                non_anomaly_indices = np.argwhere(non_anomaly_mask & valid_pixel_mask_2d.reshape((args.image_size, args.image_size)))
+                non_anomaly_features = []
+
+                for non_anomaly_index_2d in non_anomaly_indices:
+                    if tuple(non_anomaly_index_2d) in pixel_index_map:
+                        data_row_index = pixel_index_map[tuple(non_anomaly_index_2d)]
+                        non_anomaly_features.append(prepared_data[data_row_index])
+
+                if len(non_anomaly_features) > 0:
+                    non_anomaly_features = np.array(non_anomaly_features)
+                    # Sample to match anomaly size if needed
+                    if len(non_anomaly_features) > len(anomaly_intensity_features):
+                        indices = np.random.choice(
+                            len(non_anomaly_features),
+                            size=len(anomaly_intensity_features),
+                            replace=False
+                        )
+                        non_anomaly_features = non_anomaly_features[indices]
+
+                    compute_feature_importance(
+                        anomaly_intensity_features,
+                        non_anomaly_features,
+                        channel_names,
+                        args.output_dir
+                    )
+
+            n_clusters_to_use = args.n_clusters
             print(f"Using user-specified n_clusters = {n_clusters_to_use}")
 
-            # Perform MiniBatch K-Means Clustering # Changed comment to reflect
-            # MiniBatchKMeans
-            cluster_labels, _ = perform_kmeans_clustering(  # Function name is still perform_kmeans_clustering but now uses MiniBatchKMeans
+            # Perform K-Means Clustering
+            cluster_labels, _ = perform_kmeans_clustering(
                 anomaly_intensity_features,
                 n_clusters_to_use,
-                args.random_state
+                random_state=args.random_state
             )
 
             # Create cluster mask, colormap, and legend patches
@@ -634,22 +732,8 @@ def main():
                     anomaly_mask_global,
                     cluster_labels,
                     valid_pixel_mask,
-                    current_image_size  # Pass current image size
+                    args.image_size
                 )
-
-            # Calculate cluster pixel counts and anomaly percentages
-            for cluster_index in range(n_clusters_global):
-                cluster_pixel_count = np.sum(cluster_mask_global == (
-                    cluster_index + 1))  # Count pixels in cluster
-                cluster_pixels_counts.append(
-                    cluster_pixel_count)  # Append count to list
-                cluster_percentage = (
-                    cluster_pixel_count / anomaly_pixels_count) * 100 if anomaly_pixels_count > 0 else 0
-                cluster_anomaly_percentages.append(
-                    cluster_percentage)  # Append percentage to list
-                print(f"  Cluster {cluster_index + 1}: {cluster_pixel_count} pixels"
-                      # Report cluster pixel count and percentage
-                      f" ({cluster_percentage:.2f}%) of total anomalies")
 
         else:  # Handle case where no anomalies are detected
             print(f"No anomalies found for threshold {anomaly_threshold}.")
@@ -660,23 +744,27 @@ def main():
             cluster_patches_global = []
             n_clusters_global = 0
 
-        # --- 7. Plotting and Saving Results ---
+
+        elapsed_time = time.time() - start_time
+        print(f"Execution time for threshold {anomaly_threshold:.2f}: {elapsed_time:.2f} seconds")
+
+
+        # --- 7. Plot results for current threshold ---
         plot_results(
-            masked_data_list,
-            cluster_mask_global,
-            cluster_cmap_global,
-            n_clusters_global,
-            cluster_patches_global,
-            channel_names,
-            anomaly_threshold,
-            args.output_dir,
-            total_pixels,  # Pass total pixels
-            anomaly_pixels_count,  # Pass anomaly pixel count
-            cluster_pixels_counts,  # Pass cluster pixel counts
-            cluster_anomaly_percentages,  # Pass cluster anomaly percentages
-            # Added clustering_method_name for plot title
-            clustering_method_name="MiniBatch K-Means"
+            masked_data_list=masked_data_list,
+            cluster_mask_global=cluster_mask_global,
+            cluster_cmap_global=cluster_cmap_global,
+            n_clusters_global=n_clusters_global,
+            cluster_patches_global=cluster_patches_global,
+            channel_names=channel_names,
+            anomaly_threshold=anomaly_threshold,
+            output_dir=args.output_dir,
+            elapsed_time=elapsed_time
         )
+        print(f"Results plotted for threshold {anomaly_threshold}.")
+    print("Script executed successfully.")
+
+
 
 
 if __name__ == "__main__":
