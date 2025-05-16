@@ -1,252 +1,176 @@
 import os
-import matplotlib.colors
-import matplotlib.pyplot as plt
 import numpy as np
-
-
-def crop_with_margin(masked_data, cluster_mask=None, margin_fraction=0.1):
-    """Recorta la imagen y la máscara de clusters dejando un margen del 10% de píxeles no válidos."""
-    # Encuentra las filas y columnas que contienen valores no NaN
-    valid_rows = ~np.isnan(masked_data).all(axis=1)  # Fila no completamente NaN
-    valid_cols = ~np.isnan(masked_data).all(axis=0)  # Columna no completamente NaN
-    
-    # Si se proporciona la máscara de clusters, no recortamos las zonas del cluster
-    if cluster_mask is not None:
-        valid_rows = valid_rows | np.any(cluster_mask, axis=1)
-        valid_cols = valid_cols | np.any(cluster_mask, axis=0)
-
-    # Encuentra los índices de la primera y última fila válida
-    min_row, max_row = np.where(valid_rows)[0][[0, -1]]
-    
-    # Encuentra los índices de la primera y última columna válida
-    min_col, max_col = np.where(valid_cols)[0][[0, -1]]
-    
-    # Calculamos el margen a recortar (10%)
-    row_margin = int((max_row - min_row + 1) * margin_fraction)
-    col_margin = int((max_col - min_col + 1) * margin_fraction)
-
-    # Aplicamos el margen
-    min_row = max(min_row - row_margin, 0)
-    max_row = min(max_row + row_margin, masked_data.shape[0] - 1)
-    min_col = max(min_col - col_margin, 0)
-    max_col = min(max_col + col_margin, masked_data.shape[1] - 1)
-
-    # Recortar la imagen según estos índices
-    cropped_data = masked_data[min_row:max_row+1, min_col:max_col+1]
-    
-    # Recortar también la máscara del cluster
-    cropped_cluster_mask = cluster_mask[min_row:max_row+1, min_col:max_col+1] if cluster_mask is not None else None
-    
-    return cropped_data, cropped_cluster_mask, (min_row, max_row, min_col, max_col)
-
-
-def plot_results(
-    masked_data_list: list,
-    cluster_mask_global: np.ndarray,
-    cluster_cmap_global: matplotlib.colors.ListedColormap,
-    n_clusters_global: int,
-    cluster_patches_global: list,
-    channel_names: list,
-    anomaly_threshold: float,
-    output_dir: str,
-    total_pixels_resized: int,
-    anomaly_pixels_count: int,
-    file_type: str,
-    clustering_method_name: str = "K-Means",
-):
-    """Plots and saves anomaly detection and clustering results."""
-    if not masked_data_list:
-        print("No data to plot.")
-        return
-
-    # Determine plot grid size dynamically (e.g., up to 3x3)
-    num_images = len(masked_data_list)
-    num_cols = min(3, num_images)
-    num_rows = (num_images + num_cols - 1) // num_cols
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 5 * num_rows), dpi=100, squeeze=False)  # Use squeeze=False for consistent 2D array
-    axes = axes.flatten()
-
-    anomaly_percentage = (anomaly_pixels_count / total_pixels_resized) * 100 if total_pixels_resized > 0 else 0
-    fig.suptitle(
-        f'{clustering_method_name} Anomaly Clusters in SDO/AIA {file_type.upper()} Channels\n'
-        f'Anomaly Threshold: {anomaly_threshold:.2f} | Anomalous Pixels (resized): {anomaly_pixels_count}/{total_pixels_resized} ({anomaly_percentage:.2f}%)',
-        fontsize=16, y=0.98 if num_rows > 1 else 1.02  # Adjust title position
-    )
-
-    base_cmap_name = 'sdoaia{channel}'  # Base colormap name template
-    fallback_cmap = 'viridis'  # Fallback if specific AIA map isn't found
-
-    for i, (masked_data, channel) in enumerate(zip(masked_data_list, channel_names)):
-        if i >= len(axes): continue  # Should not happen with dynamic grid, but safe check
-
-        ax = axes[i]
-
-        # Recortar la imagen y la máscara del cluster con margen
-        cropped_data, cropped_cluster_mask, _ = crop_with_margin(masked_data, cluster_mask_global)
-
-        # Try channel-specific colormap, else fallback
-        try:
-            cmap_name = base_cmap_name.format(channel=channel)
-            img_cmap = plt.get_cmap(cmap_name)
-        except ValueError:
-            # print(f"Colormap {cmap_name} not found, using {fallback_cmap}.")
-            img_cmap = fallback_cmap
-
-        # Plot base image (masked data)
-        # Handle cases where all data might be NaN
-        valid_data = cropped_data[~np.isnan(cropped_data)]
-        if valid_data.size > 0:
-             vmin = np.percentile(valid_data, 2)
-             vmax = np.percentile(valid_data, 98)
-        else:
-             vmin, vmax = 0, 1  # Default if no valid data
-
-        ax.imshow(
-            cropped_data, cmap=img_cmap, origin='lower',
-            vmin=vmin, vmax=vmax,
-            alpha=0.6  # Slightly more transparent base
-        )
-
-        # Overlay clusters if they exist
-        if n_clusters_global > 0 and cropped_cluster_mask is not None:
-            # Plot each cluster individually to control color and legend precisely
-            for cluster_index in range(1, n_clusters_global + 1):
-                cluster_area_mask = (cropped_cluster_mask == cluster_index)
-                if np.any(cluster_area_mask):  # Only plot if pixels exist for this cluster
-                    # Use the provided global cmap, ensure index is correct
-                    # cmap expects normalized value 0..1
-                    cluster_color_norm = (cluster_index - 1) / (n_clusters_global - 1 if n_clusters_global > 1 else 1)
-                    cluster_color = cluster_cmap_global(cluster_color_norm)
-                    # Create a single-color map for this cluster
-                    single_color_cmap = matplotlib.colors.ListedColormap([cluster_color])
-
-                    # Mask everything *except* the current cluster
-                    overlay = np.ma.masked_where(~cluster_area_mask, cropped_cluster_mask)
-                    ax.imshow(
-                        overlay,
-                        cmap=single_color_cmap,  # Use the single color map
-                        origin='lower',
-                        alpha=0.8,  # Make clusters slightly more opaque
-                        vmin=cluster_index - 0.5, vmax=cluster_index + 0.5  # Center vmin/vmax on index
-                    )
-
-        # Set title
-        title_lines = [f'AIA {channel} Å']
-        ax.set_title("\n".join(title_lines), color='black', fontsize=12, pad=5)  # Slightly smaller font
-        ax.axis('off')
-
-    # Add legend if clusters were found
-    if cluster_patches_global:
-        # Place legend outside the plot area to avoid overlap
-        fig.legend(
-            handles=cluster_patches_global,
-            loc='center right',  # Position relative to the figure
-            bbox_to_anchor=(1.0, 0.5),  # Adjust anchor to be outside
-            fontsize='medium',  # Slightly larger legend font
-            framealpha=0.9
-        )
-
-    # Remove empty subplots
-    for j in range(num_images, len(axes)):
-        fig.delaxes(axes[j])
-
-    plt.tight_layout(rect=[0, 0, 0.9, 0.95])  # Adjust rect to make space for legend if needed
-    filename = os.path.join(
-        output_dir, f"{file_type}_kmeans_anomaly_detection_thresh_{anomaly_threshold:.2f}.png"  # Updated filename
-    )
-    plt.savefig(filename, bbox_inches='tight', dpi=150)  # Increase DPI slightly
-    plt.close(fig)
-    print(f"\tFigure saved to: {filename}\n")
-
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+import matplotlib.patches as mpatches
 
 def plot_single_channel(
-    masked_data: np.ndarray,
-    cluster_mask_global: np.ndarray,
-    cluster_cmap_global: matplotlib.colors.ListedColormap,
-    n_clusters_global: int,
-    cluster_patches_global: list,
-    channel: str,
-    anomaly_threshold: float,
-    output_dir: str,
-    total_pixels_resized: int,
-    anomaly_pixels_count: int,
-    file_type: str,
-    clustering_method_name: str,
-    timestamp: str
+    masked_data,
+    cluster_mask_global=None,
+    cluster_cmap_global=None,
+    n_clusters_global=0,
+    cluster_patches_global=None,
+    channel="Unknown",
+    anomaly_threshold=None,
+    output_dir="./output",
+    total_pixels_resized=0,
+    anomaly_pixels_count=0,
+    file_type="fits",
+    clustering_method_name="K-Means",
+    timestamp=None
 ):
-    """Plots and saves anomaly detection results for a single channel."""
-    
-    # Create figure for single channel
-    fig, ax = plt.subplots(figsize=(8, 8), dpi=100)
-    
-    # Crop the data and cluster mask
-    cropped_data, cropped_cluster_mask, _ = crop_with_margin(masked_data, cluster_mask_global)
-    
-    # Try channel-specific colormap, else fallback
+    """Plot a single channel with optional cluster overlay."""
     try:
-        cmap_name = f'sdoaia{channel}'
-        img_cmap = plt.get_cmap(cmap_name)
-    except ValueError:
-        img_cmap = 'viridis'
-    
-    # Plot base image
-    valid_data = cropped_data[~np.isnan(cropped_data)]
-    if valid_data.size > 0:
-        vmin = np.percentile(valid_data, 2)
-        vmax = np.percentile(valid_data, 98)
-    else:
-        vmin, vmax = 0, 1
+        plt.figure(figsize=(10, 8))
+        
+        # Check if we have any valid data
+        valid_mask = ~np.isnan(masked_data)
+        if np.any(valid_mask):
+            # Compute percentiles for better visualization range
+            vmin = np.nanpercentile(masked_data, 2)
+            vmax = np.nanpercentile(masked_data, 98)
+            
+            # Plot the original data with proper scaling
+            plt.imshow(masked_data, cmap='sdoaia' + str(channel) if channel.isdigit() else 'viridis', 
+                      vmin=vmin, vmax=vmax, origin='lower')
+            
+            # Overlay clusters if provided
+            if cluster_mask_global is not None and n_clusters_global > 0:
+                for cluster_idx in range(1, n_clusters_global + 1):
+                    # Create mask for this specific cluster
+                    cluster_area = (cluster_mask_global == cluster_idx)
+                    if np.any(cluster_area):
+                        # Get color from colormap
+                        color_idx = (cluster_idx - 1) / max(1, n_clusters_global - 1)
+                        cluster_color = cluster_cmap_global(color_idx)
+                        
+                        # Create masked array to only show this cluster
+                        masked_cluster = np.ma.masked_where(~cluster_area, cluster_mask_global)
+                        
+                        # Plot the cluster with a single color
+                        plt.imshow(
+                            masked_cluster,
+                            cmap=matplotlib.colors.ListedColormap([cluster_color]),
+                            alpha=0.6,  # Semi-transparent
+                            vmin=cluster_idx - 0.5,
+                            vmax=cluster_idx + 0.5,
+                            origin='lower'
+                        )
+        else:
+            # If all data is NaN, show a blank image
+            plt.imshow(np.zeros_like(masked_data), cmap='viridis')
+            plt.text(masked_data.shape[1]//2, masked_data.shape[0]//2, "No valid data", 
+                     ha='center', va='center', fontsize=20)
+        
+        # Add colorbar and title
+        plt.colorbar(label='Intensity')
+        
+        title = f'Channel {channel}'
+        if anomaly_threshold is not None:
+            title += f' (Threshold: {anomaly_threshold})'
+            if anomaly_pixels_count > 0 and total_pixels_resized > 0:
+                percentage = anomaly_pixels_count / total_pixels_resized * 100
+                title += f'\nAnomalies: {anomaly_pixels_count}/{total_pixels_resized} ({percentage:.2f}%)'
+        
+        plt.title(title)
+        plt.axis('off')
+        
+        # Add legend if clusters are present
+        if cluster_patches_global and n_clusters_global > 0:
+            plt.legend(
+                handles=cluster_patches_global,
+                loc='upper right',
+                fontsize='small',
+                framealpha=0.7
+            )
+        
+        # Save the figure with descriptive filename
+        filename = f'aia_{channel}'
+        if anomaly_threshold is not None:
+            threshold_str = str(abs(anomaly_threshold)).replace('.', '_')
+            filename += f'_threshold_{threshold_str}'
+        filename += '.png'
+        
+        output_path = os.path.join(output_dir, filename)
+        plt.savefig(output_path, bbox_inches='tight', dpi=150)
+        plt.close()
+        
+        print(f"Saved visualization for channel {channel} to {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"Error in plot_single_channel for {channel}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
-    ax.imshow(
-        cropped_data, cmap=img_cmap, origin='lower',
-        vmin=vmin, vmax=vmax,
-        alpha=0.6
-    )
-
-    # Overlay clusters if they exist
-    if n_clusters_global > 0 and cropped_cluster_mask is not None:
-        for cluster_index in range(1, n_clusters_global + 1):
-            cluster_area_mask = (cropped_cluster_mask == cluster_index)
-            if np.any(cluster_area_mask):
-                cluster_color_norm = (cluster_index - 1) / (n_clusters_global - 1 if n_clusters_global > 1 else 1)
-                cluster_color = cluster_cmap_global(cluster_color_norm)
-                single_color_cmap = matplotlib.colors.ListedColormap([cluster_color])
-                overlay = np.ma.masked_where(~cluster_area_mask, cropped_cluster_mask)
-                ax.imshow(
-                    overlay,
-                    cmap=single_color_cmap,
-                    origin='lower',
-                    alpha=0.8,
-                    vmin=cluster_index - 0.5, vmax=cluster_index + 0.5
-                )
-
-    # Set title and labels
-    anomaly_percentage = (anomaly_pixels_count / total_pixels_resized) * 100 if total_pixels_resized > 0 else 0
-    title = (f'SDO/AIA {channel} Å - Anomaly Detection\n'
-             f'Threshold: {anomaly_threshold:.2f} | Anomalous Pixels: {anomaly_percentage:.2f}%')
-    ax.set_title(title, pad=10)
-    ax.axis('off')
-
-    # Add legend if clusters exist
-    if cluster_patches_global:
-        ax.legend(
-            handles=cluster_patches_global,
-            loc='center left',
-            bbox_to_anchor=(1, 0.5),
-            fontsize='medium'
-        )
-
-    # Create threshold directory if it doesn't exist
-    # Convert threshold to string and replace dot with underscore
-    threshold_str = f"{anomaly_threshold:.2f}".replace(".", "_")
-    threshold_dir = os.path.join(output_dir, threshold_str)
-    os.makedirs(threshold_dir, exist_ok=True)
-
-    # Save the figure with new naming convention
-    filename = os.path.join(
-        threshold_dir,
-        f"{channel}_{threshold_str}_{timestamp}.png"
-    )
-    plt.savefig(filename, bbox_inches='tight', dpi=150)
-    plt.close(fig)
-    print(f"\tSaved channel {channel} to: {filename}")
+def plot_results(
+    masked_data_list,
+    channel_names,
+    anomaly_map,
+    cluster_mask,
+    threshold,
+    output_dir
+):
+    """Plot combined results including anomaly map and clusters."""
+    try:
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Plot anomaly map
+        plt.figure(figsize=(10, 8))
+        plt.imshow(anomaly_map, cmap='coolwarm_r')
+        plt.colorbar(label='Anomaly Score')
+        plt.title(f'Anomaly Map (Threshold: {threshold})')
+        plt.axis('off')
+        plt.savefig(os.path.join(output_dir, 'anomaly_map.png'), bbox_inches='tight', dpi=150)
+        plt.close()
+        
+        # Plot cluster mask if it exists and has clusters
+        if cluster_mask is not None and np.any(cluster_mask > 0):
+            # Create a colormap for clusters
+            n_clusters = np.max(cluster_mask)
+            colors = plt.cm.tab10(np.linspace(0, 1, n_clusters))
+            cluster_cmap = ListedColormap(colors)
+            
+            plt.figure(figsize=(10, 8))
+            plt.imshow(cluster_mask, cmap=cluster_cmap)
+            plt.colorbar(label='Cluster ID')
+            plt.title(f'Cluster Map (Threshold: {threshold})')
+            plt.axis('off')
+            plt.savefig(os.path.join(output_dir, 'cluster_map.png'), bbox_inches='tight', dpi=150)
+            plt.close()
+            
+            # Plot each channel with cluster overlay
+            for data, channel in zip(masked_data_list, channel_names):
+                plt.figure(figsize=(10, 8))
+                
+                # Plot the channel data
+                valid_mask = ~np.isnan(data)
+                if np.any(valid_mask):
+                    # Normalize channel data
+                    norm_data = data.copy()
+                    if np.any(np.isnan(norm_data)):
+                        min_val = np.nanmin(norm_data)
+                        norm_data[np.isnan(norm_data)] = min_val
+                    
+                    if np.max(norm_data) > np.min(norm_data):
+                        norm_data = (norm_data - np.min(norm_data)) / (np.max(norm_data) - np.min(norm_data))
+                    
+                    plt.imshow(norm_data, cmap='gray', alpha=0.7)
+                
+                # Overlay clusters with transparency
+                cluster_overlay = np.ma.masked_where(cluster_mask == 0, cluster_mask)
+                plt.imshow(cluster_overlay, cmap=cluster_cmap, alpha=0.6)
+                
+                plt.colorbar(label='Cluster ID')
+                plt.title(f'Channel {channel} with Clusters (Threshold: {threshold})')
+                plt.axis('off')
+                plt.savefig(os.path.join(output_dir, f'channel_{channel}_clusters.png'), 
+                            bbox_inches='tight', dpi=150)
+                plt.close()
+        
+        print(f"Saved result visualizations to {output_dir}")
+    except Exception as e:
+        print(f"Error in plot_results: {e}")
