@@ -22,9 +22,9 @@ steps:
       '--platform', 'managed',
       '--region', 'us-central1',
       '--allow-unauthenticated',
-      '--memory', '4Gi',
-      '--cpu', '2',
-      '--timeout', '300s',
+      '--memory', '8Gi',
+      '--cpu', '4',
+      '--timeout', '3600s', 
       '--concurrency', '10',
       '--port', '8080'
     ]
@@ -35,5 +35,5 @@ substitutions:
 images:
   - 'us-central1-docker.pkg.dev/${PROJECT_ID}/solar-api-repo/solar-api:${_TAG}'
 
-options:
-  logging: CLOUD_LOGGING_ONLY
+# Set timeout for entire build process (default is 10m)
+timeout: 3600s  

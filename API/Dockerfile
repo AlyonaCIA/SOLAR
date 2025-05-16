@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y \
     libopenjp2-7-dev \
     gcc \
     g++ \
+    # Add these for FITS support
+    build-essential \
+    gfortran \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

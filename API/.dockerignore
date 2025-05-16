@@ -1,0 +1,76 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Python cache files
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/.pytest_cache
+**/.coverage
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.env/
+.venv/
+
+# Temporary data
+temp_data/
+outputs/
+logs/
+*.log
+
+# Documentation
+docs/
+README.md
+CHANGELOG.md
+LICENSE
+
+# Development tools
+.idea/
+.vscode/
+*.sublime-*
+*.swp
+*.swo
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Test files
+test/
+tests/
+**/test_*.py
+
+# Large data files (if applicable)
+**/*.fits
+**/*.jp2
+**/*.h5
+**/*.npz
+**/*.npy
+**/*.gz
+**/*.zip
+**/*.tar
+**/data/
+samples/
+
+# Notebook files (unless specifically needed)
+**/*.ipynb
+
+# JavaScript/frontend-related
+node_modules/
+**/package-lock.json
+**/yarn.lock
+
+# Database files
+**/*.db
+**/*.sqlite
+
+# Docker files (meta)
+Dockerfile*
+docker-compose*
