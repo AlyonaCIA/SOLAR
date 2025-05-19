@@ -14,7 +14,9 @@ from sklearn.decomposition import PCA  # Import PCA here
 from sklearn.ensemble import IsolationForest
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
+import time
 
+from sklearn.metrics import silhouette_score
 matplotlib.use('Agg')  # Use Agg backend for saving files
 
 
@@ -105,29 +107,44 @@ def reduce_dimensionality(data: np.ndarray, n_components: int = 50) -> np.ndarra
 
 # --- Clustering Methods ---
 
-def perform_dbscan_clustering(data: np.ndarray) -> np.ndarray:
-    """Performs DBSCAN clustering."""
-    dbscan = DBSCAN(eps=0.3, min_samples=10)  # tuned parameters
-    labels = dbscan.fit_predict(data)
-    return labels
+def perform_dbscan_clustering_with_search(data: np.ndarray) -> np.ndarray:
+    """Performs DBSCAN with grid search for best eps and min_samples."""
+    best_score = -1
+    best_labels = None
+    best_params = (None, None)
 
+    eps_values = [0.1, 0.2, 0.3, 0.4, 0.5]
+    min_samples_values = [3, 5, 10, 15]
 
-def perform_meanshift_clustering(data: np.ndarray) -> np.ndarray:
-    """Performs MeanShift clustering."""
-    bandwidth = estimate_bandwidth(data, quantile=0.2, n_samples=500)  # tune parameters
-    ms = MeanShift(bandwidth=bandwidth)
-    labels = ms.fit_predict(data)
-    return labels
+    print("    Starting DBSCAN hyperparameter search...")
+    for eps in eps_values:
+        for min_samples in min_samples_values:
+            db = DBSCAN(eps=eps, min_samples=min_samples)
+            labels = db.fit_predict(data)
 
+            # Skip cases where all points are noise or only one cluster
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            if n_clusters <= 1:
+                continue
 
-def perform_gmm_clustering(data: np.ndarray, n_clusters: int,
-                           random_state: int = 42) -> np.ndarray:
-    """Performs Gaussian Mixture Model clustering."""
-    gmm = GaussianMixture(n_components=n_clusters,
-                          random_state=random_state)  # Removed redundant random_state
-    labels = gmm.fit_predict(data)
-    return labels
+            try:
+                score = silhouette_score(data, labels)
+                print(f"    eps={eps}, min_samples={min_samples}, "
+                      f"clusters={n_clusters}, silhouette={score:.3f}")
+                if score > best_score:
+                    best_score = score
+                    best_labels = labels
+                    best_params = (eps, min_samples)
+            except Exception as e:
+                print(f"    Skipping combination eps={eps}, min_samples={min_samples} due to error: {e}")
+                continue
 
+    if best_labels is None:
+        print("    No valid DBSCAN clustering found, returning noise.")
+        return np.full(shape=(len(data),), fill_value=-1)
+
+    print(f"    Best DBSCAN params: eps={best_params[0]}, min_samples={best_params[1]}, silhouette={best_score:.3f}")
+    return best_labels
 
 def create_cluster_mask(
     anomaly_mask: np.ndarray,
@@ -209,10 +226,12 @@ def plot_results(
     channel_names: list,
     anomaly_threshold: float,
     output_dir: str,
-    clustering_method_name: str,  # Added clustering method name
-    total_pixels: int,  # Added total_pixels
-    anomaly_pixels_count: int  # Added anomaly_pixels_count
+    clustering_method_name: str,
+    total_pixels: int,
+    anomaly_pixels_count: int,
+    exec_time: float
 ):
+
     """Plots and saves the results, overlaying global clusters."""
     num_rows, num_cols = 3, 3
     fig, axes = plt.subplots(num_rows, num_cols, figsize=(18, 15), dpi=100)
@@ -221,11 +240,10 @@ def plot_results(
     anomaly_percentage = (anomaly_pixels_count / total_pixels) * \
         100 if total_pixels > 0 else 0  # Calculate percentage
     fig.suptitle(
-        f'Anomaly Detection with {
-            clustering_method_name} Clustering (Max 5 Clusters)\n'  # Method in title
+        f'Anomaly Detection with {clustering_method_name} Clustering (Max 5 Clusters)\n'
         f'Anomaly Threshold: {anomaly_threshold:.2f} | '
         f'Anomalous Pixels: {anomaly_pixels_count} / {total_pixels} '
-        f'({anomaly_percentage:.2f}%)',  # Added anomaly info to title
+        f'({anomaly_percentage:.2f}%) | Exec Time: {exec_time:.2f}s',
         fontsize=18
     )
 
@@ -318,6 +336,7 @@ def plot_results(
 # --- Main Execution ---
 
 def main():
+    start_time_total = time.time()
     parser = argparse.ArgumentParser(
         description="SDO/AIA Anomaly Detection with Multiple Clustering Methods")
     parser.add_argument("--data_dir", type=str, default="Data/sdo_data",
@@ -359,9 +378,8 @@ def main():
         masked_data_list)
     reduced_data = reduce_dimensionality(prepared_data)
 
-    clustering_methods = {  # Dictionary of clustering methods
-        "DBSCAN": perform_dbscan_clustering,
-        "GMM": perform_gmm_clustering,
+    clustering_methods = {
+        "DBSCAN": perform_dbscan_clustering_with_search
     }
 
     # Loop through anomaly thresholds
@@ -389,31 +407,34 @@ def main():
         for method_name, clustering_func in clustering_methods.items():
             print(f"  Applying {method_name} Clustering...")
 
-            if method_name in ["GMM"]:  # Methods that need n_clusters parameter
-                cluster_labels = clustering_func(
-                    anomaly_data, args.n_clusters, args.random_state)  # Pass random_state
-                # Limit clusters to max 5 for GMM
+            start_time = time.time()
+            cluster_labels = clustering_func(anomaly_data)
+            exec_time = time.time() - start_time
+
+            if method_name in ["GMM"]:
                 n_clusters_to_plot = min(args.n_clusters, 5)
-            elif method_name == "DBSCAN" or method_name == "MeanShift":  # Methods that DO NOT need n_clusters parameter
-                cluster_labels = clustering_func(anomaly_data)
-                # DBSCAN determines clusters, limit to 5
+            elif method_name in ["DBSCAN", "MeanShift"]:
                 n_clusters_to_plot = min(
                     len(np.unique(cluster_labels)) - (1 if -1 in cluster_labels else 0), 5)
             else:
                 print(f"  Unknown clustering method: {method_name}")
-                continue  # Skip to the next method
+                continue
 
-            # Create cluster mask and plot results
             cluster_mask_global, cluster_cmap_global, cluster_patches_global, n_clusters_global = create_cluster_mask(
                 anomaly_mask_global, cluster_labels, valid_pixel_mask, args.image_size
             )
 
             plot_results(
                 masked_data_list, cluster_mask_global, cluster_cmap_global, n_clusters_global,
-                cluster_patches_global, channel_names, anomaly_threshold, args.output_dir, method_name, total_pixels, anomaly_pixels_count  # Pass pixel counts
+                cluster_patches_global, channel_names, anomaly_threshold, args.output_dir,
+                method_name, total_pixels, anomaly_pixels_count, exec_time
             )
 
     print("All anomaly detection and clustering plots saved to:", args.output_dir)
+
+    end_time_total = time.time()
+    elapsed_time_total = end_time_total - start_time_total
+    print(f"Total execution time: {elapsed_time_total:.2f} seconds")
 
 
 if __name__ == "__main__":
