@@ -14,6 +14,8 @@ from skimage.transform import resize
 from sklearn.cluster import KMeans
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import RobustScaler
+from LOF_clustering_metrics import plot_elbow_and_silhouette
+
 
 matplotlib.use('Agg')  # Use Agg backend for saving files
 
@@ -684,6 +686,14 @@ def main():
         anomaly_intensity_features = np.array(anomaly_intensity_features)
         valid_anomaly_pixel_indices = np.array(valid_anomaly_pixel_indices)
 
+        elbow_k, silhouette_k, plot_path = plot_elbow_and_silhouette(
+        anomaly_intensity_features,
+        max_k=args.max_k,
+        output_dir=args.output_dir
+        )
+        print(f"Elbow k: {elbow_k}, Silhouette k: {silhouette_k}")
+        print(f"Plot saved to: {plot_path}")
+
         if len(anomaly_intensity_features) > 0:  # Proceed if valid anomalies
 
             # Compute feature importance if requested
@@ -765,6 +775,13 @@ def main():
     print("Script executed successfully.")
 
 
+    elbow_k, silhouette_k, plot_path = plot_elbow_and_silhouette(
+        anomaly_intensity_features,
+        max_k=args.max_k,
+        output_dir=args.output_dir
+    )
+    print(f"Elbow k: {elbow_k}, Silhouette k: {silhouette_k}")
+    print(f"Plot saved to: {plot_path}")
 
 
 if __name__ == "__main__":

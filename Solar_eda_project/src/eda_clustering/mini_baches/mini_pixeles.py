@@ -12,6 +12,7 @@ from skimage.transform import resize
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import RobustScaler
+from sklearn.metrics import silhouette_score
 
 matplotlib.use('Agg')  # Use Agg backend for saving files
 
@@ -92,6 +93,53 @@ def perform_kmeans_clustering(
     )
     kmeans.fit(data)
     return kmeans.labels_, kmeans.inertia_
+
+def evaluate_minibatch_kmeans_clustering(data: np.ndarray, max_k: int = 10, random_state: int = 42,
+                                         output_dir: str = "./output_figures", prefix: str = "") -> int:
+    """Evalúa MiniBatchKMeans para múltiples valores de k usando Inertia (codo) y
+    Silhouette Score."""
+    inertias = []
+    silhouettes = []
+    k_range = range(2, max_k + 1)
+
+    print("Evaluando MiniBatchKMeans con método del codo y Silhouette Score...")
+    for k in k_range:
+        kmeans = MiniBatchKMeans(n_clusters=k, random_state=random_state, n_init=10, batch_size=256)
+        labels = kmeans.fit_predict(data)
+        inertias.append(kmeans.inertia_)
+        try:
+            sil_score = silhouette_score(data, labels)
+            silhouettes.append(sil_score)
+        except Exception as e:
+            print(f"Silhouette no calculable para k={k}: {e}")
+            silhouettes.append(np.nan)
+
+        print(f"  k={k}: Inertia={kmeans.inertia_:.2f}, Silhouette={sil_score:.3f}")
+
+    # Plot Inertia (Elbow)
+    plt.figure(figsize=(8, 4))
+    plt.plot(k_range, inertias, marker='o')
+    plt.xlabel("Number of Clusters (k)")
+    plt.ylabel("Inertia (WCSS)")
+    plt.title("MiniBatchKMeans Elbow Method")
+    plt.grid(True)
+    plt.savefig(os.path.join(output_dir, f"{prefix}minibatch_elbow.png"))
+    plt.close()
+
+    # Plot Silhouette Score
+    plt.figure(figsize=(8, 4))
+    plt.plot(k_range, silhouettes, marker='s', color='green')
+    plt.xlabel("Number of Clusters (k)")
+    plt.ylabel("Silhouette Score")
+    plt.title("MiniBatchKMeans Silhouette Scores")
+    plt.grid(True)
+    plt.savefig(os.path.join(output_dir, f"{prefix}minibatch_silhouette.png"))
+    plt.close()
+
+    # Mejor k = el que maximiza Silhouette
+    best_k = k_range[np.nanargmax(silhouettes)]
+    print(f"\nMejor k según Silhouette Score: {best_k} (score = {np.nanmax(silhouettes):.3f})\n")
+    return best_k
 
 
 def create_cluster_mask(
@@ -315,9 +363,18 @@ def main():
         cluster_anomaly_percentages: List[float] = []
 
         if len(anomaly_intensity_features):
-            cluster_labels, _ = perform_kmeans_clustering(
-                anomaly_intensity_features, args.n_clusters, args.random_state
+            best_k = evaluate_minibatch_kmeans_clustering(
+                anomaly_intensity_features,
+                max_k=args.max_k,
+                random_state=args.random_state,
+                output_dir=args.output_dir,
+                prefix=f"thresh_{anomaly_threshold:.2f}_"
             )
+
+            cluster_labels, _ = perform_kmeans_clustering(
+                anomaly_intensity_features, best_k, args.random_state
+            )
+
             cluster_mask_global, cluster_cmap_global, cluster_patches_global, n_clusters_global = create_cluster_mask(
                 anomaly_mask_global, cluster_labels, valid_pixel_mask, final_image_size  # type: ignore
             )
