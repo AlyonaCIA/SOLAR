@@ -1,24 +1,24 @@
 import os
 import shutil
 import uuid
-from typing import List, Dict, Optional, Union
+from typing import Union
 import re
 import datetime
 import traceback
+import time
+import threading
 
-import aiohttp
 import asyncio
-import urllib.parse
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile, Body
+from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Import necessary modules from sunpy and astropy
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from sunpy.net import Fido
+from sunpy.net import Fido, vso
 from sunpy.net import attrs as a
 
 # Import our custom modules
@@ -26,6 +26,8 @@ from app.api.pipeline.executor import run_pipeline, run_single_channel_pipeline,
 from app.api.pipeline.job_manager import job_manager, JobStatus
 from app.api.pipeline.background_job import run_in_background
 from app.config.settings import config
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Initialize the API router
 router = APIRouter()
@@ -91,23 +93,72 @@ def save_to_storage(file_path: str, object_name: str) -> dict:
         "storage_type": "local"
     }
 
-# Helper functions for fetching JP2 images
-async def fetch_jp2_image(session: aiohttp.ClientSession, source_id: int, timestamp: str) -> bytes:
-    """Fetches a JP2 image from Helioviewer API."""
-    params = {
-        "sourceId": source_id,
-        "date": timestamp,
-        "json": 0
-    }
+# New function to save directly from memory buffer
+def save_buffer_to_storage(buffer, object_name: str) -> dict:
+    """
+    Save a memory buffer directly to either GCS or local storage.
+    Returns a dictionary with url, path, and storage_type.
+    """
+    if USE_GCS and bucket:
+        try:
+            # Upload to GCS directly from buffer
+            blob = bucket.blob(object_name)
+            blob.upload_from_file(buffer)
+            blob.make_public()
+            return {
+                "url": blob.public_url,
+                "path": object_name,
+                "storage_type": "gcs"
+            }
+        except Exception as e:
+            print(f"Error uploading buffer to GCS: {e}, falling back to local storage")
+            # Fall back to local storage if GCS upload fails
+            pass
     
-    url = f"{HELIOVIEWER_BASE_URL}/v2/getJP2Image/?"
-    encoded_params = urllib.parse.urlencode(params)
-    full_url = url + encoded_params
+    # Use local storage - have to write from buffer to file
+    local_path = os.path.join(LOCAL_STORAGE_DIR, object_name)
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    
+    # Write buffer to file
+    buffer.seek(0)  # Reset the buffer position
+    with open(local_path, 'wb') as f:
+        f.write(buffer.getvalue())
+        
+    return {
+        "url": f"file://{os.path.abspath(local_path)}",
+        "path": local_path,
+        "storage_type": "local"
+    }
 
-    async with session.get(full_url) as response:
-        if response.status != 200:
-            raise Exception(f"Failed to fetch image for sourceId {source_id}: {response.status}")
-        return await response.read()
+# Helper function for parallel uploads
+def upload_buffer(buffer_object_tuple, gcs_path_prefix):
+    """Upload a single buffer to storage with error handling and timing"""
+    buffer, object_name = buffer_object_tuple
+    start_time = time.time()
+    
+    if buffer is None:
+        return object_name, {
+            "url": f"error:{object_name}",
+            "path": object_name, 
+            "storage_type": "error",
+            "error": "Empty buffer"
+        }
+    
+    try:
+        full_object_name = f"{gcs_path_prefix}/{object_name}"
+        result = save_buffer_to_storage(buffer, full_object_name)
+        elapsed = time.time() - start_time
+        print(f"Uploaded {full_object_name} in {elapsed:.2f}s")
+        return object_name, result
+    except Exception as e:
+        elapsed = time.time() - start_time
+        print(f"Error uploading {object_name} after {elapsed:.2f}s: {e}")
+        return object_name, {
+            "url": f"error:{object_name}",
+            "path": object_name,
+            "storage_type": "error",
+            "error": str(e)
+        }
 
 # Helper functions for FITS data retrieval
 def construct_query(
@@ -166,9 +217,36 @@ def process_fits_analysis(request):
     Processes FITS data for analysis.
     This function is meant to be run in a background thread.
     """
+    # Track overall processing time
+    start_time = time.time()
+    last_heartbeat = start_time
+    
+    # Helper function for timing logs
+    def log_with_timing(message):
+        nonlocal last_heartbeat
+        elapsed = time.time() - start_time
+        last_heartbeat = time.time()
+        print(f"[{elapsed:.1f}s] {message}")
+    
+    # Start a heartbeat thread to verify the process is still running
+    def heartbeat():
+        nonlocal last_heartbeat
+        while True:
+            time.sleep(60)  # Check every minute
+            if time.time() - last_heartbeat > 60:
+                elapsed = time.time() - start_time
+                print(f"[{elapsed:.1f}s] Still processing...")
+                last_heartbeat = time.time()
+    
+    # Start heartbeat thread
+    heartbeat_thread = threading.Thread(target=heartbeat)
+    heartbeat_thread.daemon = True
+    heartbeat_thread.start()
+    
+    log_with_timing("Starting FITS analysis")
+    
     timestamp = request.get("timestamp")
-    channels = request.get("channels", ["94", "131", "171", "193", "211", "304", "335"])
-    email = request.get("email", "j.c.g.gomez@astro.uio.no")
+    channels = ["94", "131", "171", "193", "211", "304", "335"]
     
     if not timestamp:
         return {"error": "Timestamp is required", "status_code": 400}
@@ -198,6 +276,8 @@ def process_fits_analysis(request):
     except ValueError as e:
         return {"error": f"Invalid timestamp format: {str(e)}", "status_code": 400}
 
+    log_with_timing(f"Creating directories for {len(channels)} channels")
+    
     # Create channel directories for FITS files
     channel_dirs = {}
     for channel in channels:
@@ -213,48 +293,79 @@ def process_fits_analysis(request):
                                center_y * u.arcsec + half_square_size * u.arcsec,
                                frame='helioprojective')
 
-    # Fetch FITS files from JSOC
+    log_with_timing("Starting FITS file downloads")
+    
+    # Fetch FITS files using VSO instead of JSOC
     downloaded_files = []
     download_logs = []
     
+    # Download files with better logging
+    download_start = time.time()
     for channel in channels:
         try:
-            # Convert channel to integer
-            channel_int = int(channel)
+            channel_dir = channel_dirs[channel]
+            download_logs.append(f"Fetching AIA {channel} data via VSO...")
             
-            # Define the time range and duration
-            start_time = dt.strftime(date_format)
-            end_time = (dt + datetime.timedelta(minutes=1)).strftime(date_format)
-            sample_interval = 12 * u.s
+            # Convert timestamp for VSO query
+            vso_time_start = (dt - datetime.timedelta(minutes=10)).strftime("%Y/%m/%d %H:%M:%S")
+            vso_time_end = (dt + datetime.timedelta(minutes=10)).strftime("%Y/%m/%d %H:%M:%S")
             
-            download_logs.append(f"Querying channel {channel}: {start_time} to {end_time}")
+            channel_start_time = time.time()
+            log_with_timing(f"Searching for AIA {channel} data")
             
-            # Get the query result
-            query_result = get_query_sdo(
-                channel_int, bottom_left_coord, top_right_coord,
-                start_time, end_time, email, sample_interval,
-                tracking=False
+            # Initialize VSO client
+            client = vso.VSOClient()
+            
+            # Search for files
+            query_result = client.search(
+                a.Time(vso_time_start, vso_time_end),
+                a.Instrument('aia'),
+                a.Wavelength(int(channel) * u.angstrom)
             )
             
-            if query_result:
-                download_logs.append(f"Query for channel {channel} returned results")
-                # Download the files
-                files = Fido.fetch(query_result, path=channel_dirs[channel])
-                download_logs.append(f"Downloaded {len(files)} files for channel {channel}")
-                downloaded_files.extend(files)
-            else:
-                download_logs.append(f"No query result for channel {channel}")
+            if len(query_result) == 0:
+                log_with_timing(f"No AIA {channel} files found")
+                download_logs.append(f"No AIA {channel} files found for time range")
+                continue
+                
+            log_with_timing(f"Found {len(query_result)} files for channel {channel}, downloading latest")
+            download_logs.append(f"Found {len(query_result)} files, downloading latest...")
+            
+            # Explicitly set download path to the channel directory
+            download_path = os.path.join(channel_dir, "{file}")
+            
+            # Download the latest file (they should be sorted by time)
+            try:
+                files = client.fetch(query_result[-1:], path=download_path)
+                
+                if files:
+                    downloaded_files.extend(files)
+                    channel_elapsed = time.time() - channel_start_time
+                    log_with_timing(f"Downloaded AIA {channel} file in {channel_elapsed:.1f}s: {files[0]}")
+                    download_logs.append(f"Success: Downloaded AIA {channel} file: {files[0]}")
+                else:
+                    log_with_timing(f"Warning: No files downloaded for channel {channel}")
+                    download_logs.append(f"Warning: No files downloaded for channel {channel}")
+            except Exception as e:
+                log_with_timing(f"Error downloading file for channel {channel}: {str(e)}")
+                download_logs.append(f"Error downloading file for channel {channel}: {str(e)}")
+                
         except Exception as e:
-            download_logs.append(f"Error processing channel {channel}: {str(e)}")
+            error_msg = f"Error processing channel {channel}: {str(e)}"
+            log_with_timing(error_msg)
+            download_logs.append(error_msg)
             continue
 
+    download_elapsed = time.time() - download_start
+    log_with_timing(f"Download phase completed in {download_elapsed:.1f}s, got {len(downloaded_files)} files")
+    
     if not downloaded_files:
         return {
             "error": "No FITS files were downloaded.",
             "logs": download_logs,
             "status_code": 500
         }
-
+    
     # Update config for FITS pipeline
     analysis_config = config.copy()
     analysis_config.update({
@@ -266,43 +377,76 @@ def process_fits_analysis(request):
     })
 
     try:
-        # Run the pipeline
+        # Run the pipeline - this now returns visualization buffers along with other results
+        log_with_timing("Starting pipeline processing")
+        pipeline_start = time.time()
         pipeline_result = run_pipeline(analysis_config)
+        pipeline_elapsed = time.time() - pipeline_start
+        log_with_timing(f"Pipeline processing completed in {pipeline_elapsed:.1f}s")
         
-        # Get output files and save to storage (GCS or local)
-        images_data = []
+        # Get visualization results
+        visualization_results = pipeline_result.get("visualization_results", [])
+        log_with_timing(f"Got {len(visualization_results)} visualization results to upload")
+        
+        # Process and upload the visualization results in parallel
+        storage_results = []
         gcs_path_prefix = f"results/fits/{formatted_timestamp}/{tmp_id}"
         
-        # Walk through all subdirectories in the output directory
-        for root, _, files in os.walk(output_dir):
-            for filename in files:
-                if filename.lower().endswith((".png", ".jpg", ".jpeg", ".tiff")):
-                    file_path = Path(root) / filename
-                    
-                    # Get relative path from output_dir
-                    rel_path = os.path.relpath(file_path, output_dir)
-                    
-                    # Extract threshold from directory name
-                    threshold_dir = os.path.basename(os.path.dirname(file_path))
-                    
-                    # Create storage object name
-                    object_name = f"{gcs_path_prefix}/{rel_path}"
-                    
-                    # Save to storage (GCS or local)
-                    storage_result = save_to_storage(str(file_path), object_name)
-                    
-                    # Add image data
-                    images_data.append({
-                        "filename": rel_path,
-                        "threshold": threshold_dir.replace("_", ".") if "_" in threshold_dir else threshold_dir,
-                        "url": storage_result["url"],
-                        "path": storage_result["path"],
-                        "storage_type": storage_result["storage_type"],
-                        "type": "image/" + filename.split('.')[-1].lower(),
-                    })
+        # Upload visualization results directly from memory buffers using parallel processing
+        log_with_timing(f"Starting parallel upload of {len(visualization_results)} files")
+        upload_start = time.time()
+        
+        # Limit workers to avoid overwhelming GCS and/or network
+        max_workers = min(10, len(visualization_results)) 
+        
+        # Use ThreadPoolExecutor for parallel uploads
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all uploads
+            futures = {executor.submit(upload_buffer, item, gcs_path_prefix): item for item in visualization_results}
+            
+            # Process results as they complete
+            for i, future in enumerate(as_completed(futures)):
+                object_name, result = future.result()
+                storage_results.append((object_name, result))
+                if (i+1) % 5 == 0 or (i+1) == len(visualization_results):
+                    log_with_timing(f"Upload progress: {i+1}/{len(visualization_results)} files uploaded")
+        
+        upload_elapsed = time.time() - upload_start
+        log_with_timing(f"All uploads completed in {upload_elapsed:.1f}s")
+        
+        # Process the results into images_data
+        images_data = []
+        for object_name, storage_result in storage_results:
+            # Extract threshold and channel info from object path
+            filename = os.path.basename(object_name)
+            dir_name = os.path.basename(os.path.dirname(object_name))
+            
+            # Extract threshold from filename or directory if applicable
+            threshold_value = None
+            if "threshold_" in filename:
+                threshold_parts = filename.split("threshold_")[1].split(".")[0]
+                threshold_value = threshold_parts.replace("_", ".")
+            elif "threshold_" in dir_name:
+                threshold_value = dir_name.replace("threshold_", "").replace("_", ".")
+            
+            # Add image data
+            images_data.append({
+                "filename": object_name,
+                "threshold": threshold_value,
+                "url": storage_result.get("url", f"error:{object_name}"),
+                "path": storage_result.get("path", object_name),
+                "storage_type": storage_result.get("storage_type", "error"),
+                "type": "image/jpeg",  # Assuming we've switched to JPEG for faster uploads
+                "error": storage_result.get("error", None)
+            })
 
         # Cleanup temporary directories
+        log_with_timing("Cleaning up temporary files")
         shutil.rmtree(input_dir, ignore_errors=True)
+        # Keep output_dir for debug if needed
+        
+        total_elapsed = time.time() - start_time
+        log_with_timing(f"Total processing completed in {total_elapsed:.1f}s")
         
         # Return success with images
         return {
@@ -310,13 +454,24 @@ def process_fits_analysis(request):
             "timestamp": timestamp,
             "processed_channels": channels,
             "images": images_data,
-            "pipeline_result": pipeline_result,
-            "download_logs": download_logs
+            "pipeline_result": {
+                "num_anomalies": pipeline_result.get("num_anomalies", 0),
+                "num_clusters": pipeline_result.get("num_clusters", 0),
+                "thresholds": pipeline_result.get("thresholds", [])
+            },
+            "download_logs": download_logs,
+            "timing": {
+                "total_seconds": round(total_elapsed, 1),
+                "download_seconds": round(download_elapsed, 1),
+                "pipeline_seconds": round(pipeline_elapsed, 1),
+                "upload_seconds": round(upload_elapsed, 1)
+            }
         }
     
     except Exception as e:
         # Log the error and traceback
         error_msg = f"Pipeline failed: {str(e)}"
+        log_with_timing(error_msg)
         tb = traceback.format_exc()
         
         # Cleanup on error
@@ -329,7 +484,7 @@ def process_fits_analysis(request):
             "download_logs": download_logs,
             "status_code": 500
         }
-
+    
 # API Endpoints
 
 @router.post("/start-fits-analysis")
@@ -388,46 +543,43 @@ async def get_job_status(job_id: str):
     
     return response
 
-# Keep backward compatibility with existing endpoint but make it use the async pattern
-@router.post("/get-fits-analyze")
-async def get_and_analyze_fits(request: dict = Body(...)):
-    """
-    Legacy endpoint that now uses the async job pattern internally.
-    It starts a job and polls for results with a reasonable timeout.
-    """
-    # Start the job
-    start_response = await start_fits_analysis(request)
-    job_id = start_response["job_id"]
+# Endpoint to process a single channel (for more focused analysis)
+@router.post("/analyze-fits-channel")
+async def analyze_fits_channel(request: dict = Body(...)):
+    """Analyze a single FITS channel"""
+    timestamp = request.get("timestamp")
+    channel = request.get("channel")  # Just one channel
     
-    # For backward compatibility, wait for a short time to see if job completes quickly
-    max_wait_seconds = 10
-    poll_interval = 0.5
-    elapsed = 0
+    if not timestamp or not channel:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Both timestamp and channel are required"}
+        )
     
-    while elapsed < max_wait_seconds:
-        # Wait a bit
-        await asyncio.sleep(poll_interval)
-        elapsed += poll_interval
-        
-        # Check job status
-        job_status = await get_job_status(job_id)
-        
-        # If job is complete or failed, return the result
-        if job_status.get("status") == "completed":
-            if "result" in job_status:
-                return job_status["result"]
-        elif job_status.get("status") == "failed":
-            return JSONResponse(
-                status_code=500,
-                content={"error": f"Analysis failed: {job_status.get('error', 'Unknown error')}"}
-            )
+    # Create a job with the request parameters
+    # Use a subset of the original process function
+    job_id = job_manager.create_job({
+        "timestamp": timestamp,
+        "channels": [channel],  # Single channel in a list
+        "email": request.get("email", "j.c.g.gomez@astro.uio.no")
+    })
     
-    # If we reach here, the job is still running
+    # Start the job in the background
+    run_in_background(process_fits_analysis, job_id, {
+        "timestamp": timestamp,
+        "channels": [channel],
+        "email": request.get("email", "j.c.g.gomez@astro.uio.no")
+    })
+    
     return {
-        "status": "processing",
+        "status": "accepted",
         "job_id": job_id,
-        "message": "Analysis is still running. Check status with /job-status/{job_id}"
+        "channel": channel,
+        "message": "Analysis started. Check status with /job-status/{job_id}"
     }
+
+
+########## TESTING ENDPOINTS ##########
 
 @router.post("/fits-raw-files")
 async def fits_raw_files(request: dict = Body(...)):
@@ -436,7 +588,6 @@ async def fits_raw_files(request: dict = Body(...)):
     """
     timestamp = request.get("timestamp")
     channels = request.get("channels", ["171", "211"])  # More focused default
-    email = request.get("email", "j.c.g.gomez@astro.uio.no")
     
     if not timestamp:
         return JSONResponse(
@@ -474,7 +625,6 @@ async def fits_raw_files(request: dict = Body(...)):
     job_id = job_manager.create_job({
         "timestamp": timestamp, 
         "channels": channels,
-        "email": email,
         "input_dir": input_dir,
         "operation": "download_only"
     })
@@ -487,41 +637,43 @@ async def fits_raw_files(request: dict = Body(...)):
             
             # Create channel directories for FITS files
             channel_dirs = {}
+            downloaded_files = []
+            
             for channel in channels:
                 channel_dir = os.path.join(input_dir, f"aia_{channel}")
                 os.makedirs(channel_dir, exist_ok=True)
                 channel_dirs[channel] = channel_dir
-            
-            # Define coordinates
-            bottom_left_coord = SkyCoord(center_x * u.arcsec - half_square_size * u.arcsec,
-                                        center_y * u.arcsec - half_square_size * u.arcsec,
-                                        frame='helioprojective')
-            top_right_coord = SkyCoord(center_x * u.arcsec + half_square_size * u.arcsec,
-                                      center_y * u.arcsec + half_square_size * u.arcsec,
-                                      frame='helioprojective')
-
-            # Fetch FITS files from JSOC
-            downloaded_files = []
-            for channel in channels:
-                channel_int = int(channel)
-                start_time = dt.strftime(date_format)
-                end_time = (dt + datetime.timedelta(minutes=1)).strftime(date_format)
-                sample_interval = 12 * u.s
                 
-                # Get the query result
-                query_result = get_query_sdo(
-                    channel_int, bottom_left_coord, top_right_coord,
-                    start_time, end_time, email, sample_interval,
-                    tracking=False
-                )
-                
-                if query_result:
-                    try:
-                        # Download the files
-                        files = Fido.fetch(query_result, path=channel_dirs[channel])
-                        downloaded_files.extend(files)
-                    except Exception as e:
-                        print(f"Error downloading files for channel {channel}: {e}")
+                try:
+                    # Convert timestamp for VSO query
+                    vso_time_start = (dt - datetime.timedelta(minutes=10)).strftime("%Y/%m/%d %H:%M:%S")
+                    vso_time_end = (dt + datetime.timedelta(minutes=10)).strftime("%Y/%m/%d %H:%M:%S")
+                    
+                    # Initialize VSO client
+                    client = vso.VSOClient()
+                    
+                    # Search for files
+                    query_result = client.search(
+                        a.Time(vso_time_start, vso_time_end),
+                        a.Instrument('aia'),
+                        a.Wavelength(int(channel) * u.angstrom)
+                    )
+                    
+                    if len(query_result) == 0:
+                        print(f"No AIA {channel} files found for time range")
+                        continue
+                        
+                    print(f"Found {len(query_result)} files, downloading latest...")
+                    
+                    # Explicitly set download path to the channel directory
+                    download_path = os.path.join(channel_dir, "{file}")
+                    
+                    # Download the latest file (they should be sorted by time)
+                    files = client.fetch(query_result[-1:], path=download_path)
+                    downloaded_files.extend(files)
+                    
+                except Exception as e:
+                    print(f"Error downloading file for channel {channel}: {e}")
             
             if not downloaded_files:
                 job_manager.fail_job(job_id, "No FITS files were downloaded.")
@@ -549,526 +701,3 @@ async def fits_raw_files(request: dict = Body(...)):
         "job_id": job_id,
         "message": "Download started. Check status with /job-status/{job_id}"
     }
-
-@router.post("/test-jsoc-connection")
-async def test_jsoc_connection(request: dict = Body(...)):
-    """Test the connection to JSOC API and file downloads."""
-    timestamp = request.get("timestamp", "2024-05-01T12:00:00Z")
-    channels = request.get("channels", ["171"])  # Just one channel for testing
-    email = request.get("email", "j.c.g.gomez@astro.uio.no")
-    
-    try:
-        dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        
-        # Create a test directory
-        test_dir = f"test_jsoc_{uuid.uuid4()}"
-        os.makedirs(test_dir, exist_ok=True)
-        
-        # Log every step
-        logs = []
-        logs.append(f"Test directory created: {test_dir}")
-        
-        # Define coordinates
-        bottom_left_coord = SkyCoord(-1210 * u.arcsec, -1210 * u.arcsec, frame='helioprojective')
-        top_right_coord = SkyCoord(1210 * u.arcsec, 1210 * u.arcsec, frame='helioprojective')
-        logs.append("Coordinates defined")
-        
-        # Try to construct a query
-        channel_int = int(channels[0])
-        start_time = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
-        end_time = (dt + datetime.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%S.%f")
-        sample_interval = 12 * u.s
-        
-        logs.append(f"Attempting JSOC query: channel={channel_int}, time={start_time} to {end_time}")
-        
-        try:
-            # First, just create the query object
-            time_attr = a.Time(start_time, end_time)
-            wave_attr = a.Wavelength(channel_int * u.angstrom, channel_int * u.angstrom)
-            email_attr = a.jsoc.Notify(email)
-            sample = a.Sample(sample_interval)
-            series = a.jsoc.Series.aia_lev1_euv_12s
-            
-            logs.append("Query attributes created successfully")
-            
-            # Then try the actual query
-            query = Fido.search(time_attr, series, wave_attr, email_attr, sample)
-            logs.append(f"Query successful. Results: {len(query)}")
-            logs.append(f"Query details: {query}")
-            
-            # Try downloading a single file
-            logs.append("Attempting download...")
-            files = Fido.fetch(query, path=test_dir, max_conn=1)
-            logs.append(f"Download successful! Files: {files}")
-            
-            # List the directory contents
-            dir_contents = os.listdir(test_dir)
-            logs.append(f"Directory contents: {dir_contents}")
-            
-        except Exception as e:
-            logs.append(f"JSOC query/fetch failed: {str(e)}")
-            logs.append(f"Exception type: {type(e)}")
-            logs.append(f"Traceback: {traceback.format_exc()}")
-        
-        # Clean up
-        shutil.rmtree(test_dir, ignore_errors=True)
-        logs.append("Test directory removed")
-        
-        return {
-            "status": "test_complete",
-            "logs": logs
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": f"Test failed: {str(e)}",
-                "traceback": traceback.format_exc()
-            }
-        )
-
-# Endpoint to process a single channel (for more focused analysis)
-@router.post("/analyze-fits-channel")
-async def analyze_fits_channel(request: dict = Body(...)):
-    """Analyze a single FITS channel"""
-    timestamp = request.get("timestamp")
-    channel = request.get("channel")  # Just one channel
-    
-    if not timestamp or not channel:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Both timestamp and channel are required"}
-        )
-    
-    # Create a job with the request parameters
-    # Use a subset of the original process function
-    job_id = job_manager.create_job({
-        "timestamp": timestamp,
-        "channels": [channel],  # Single channel in a list
-        "email": request.get("email", "j.c.g.gomez@astro.uio.no")
-    })
-    
-    # Start the job in the background
-    run_in_background(process_fits_analysis, job_id, {
-        "timestamp": timestamp,
-        "channels": [channel],
-        "email": request.get("email", "j.c.g.gomez@astro.uio.no")
-    })
-    
-    return {
-        "status": "accepted",
-        "job_id": job_id,
-        "channel": channel,
-        "message": "Analysis started. Check status with /job-status/{job_id}"
-    }
-
-async def fetch_jp2_image(session: aiohttp.ClientSession, source_id: int, timestamp: str) -> bytes:
-    """Fetches a JP2 image from Helioviewer API."""
-    params = {
-        "sourceId": source_id,
-        "date": timestamp,
-        "json": 0
-    }
-    
-    url = f"{HELIOVIEWER_BASE_URL}/v2/getJP2Image/?"
-    encoded_params = urllib.parse.urlencode(params)
-    full_url = url + encoded_params
-
-    async with session.get(full_url) as response:
-        if response.status != 200:
-            raise Exception(f"Failed to fetch image for sourceId {source_id}: {response.status}")
-        return await response.read()
-    
-@router.post("/get-image-analyze")
-async def get_and_analyze_images(request: dict = Body(...)):
-    """
-    Fetches JP2 images from Helioviewer based on timestamp and runs analysis, 
-    then saves it to storage (GCS in production, local in development).
-    """
-    timestamp = request.get("timestamp")
-    if not timestamp:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Timestamp is required"}
-        )
-    # Validate ISO format
-    iso_format = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
-    if not re.match(iso_format, timestamp):
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "Invalid timestamp format",
-                "details": "Timestamp must be in ISO format (YYYY-MM-DDThh:mm:ssZ)",
-                "example": "2024-01-01T12:00:00Z",
-                "received": timestamp
-            }
-        )
-    # Format timestamp for filenames (assuming timestamp is in format like "2024-01-01T12:00:00Z")
-    # Convert from ISO format to our filename format
-    try:
-        dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        formatted_timestamp = dt.strftime("%Y%m%d_%H%M%S")
-    except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": f"Invalid timestamp format: {str(e)}"}
-        )
-
-    # Create temp directories
-    tmp_id = str(uuid.uuid4())
-    print(f"tmp_id: {tmp_id}")
-    input_dir = f"temp_data/{tmp_id}/input_jp2_images"
-    output_dir = f"outputs/{tmp_id}"
-    os.makedirs(input_dir, exist_ok=True)
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Fetch all images concurrently
-    async with aiohttp.ClientSession() as session:
-        tasks = [
-            fetch_jp2_image(session, source_id, timestamp) 
-            for source_id in SOURCE_IDS
-        ]
-        
-        try:
-            jp2_contents = await asyncio.gather(*tasks, return_exceptions=True)
-        except Exception as e:
-            return JSONResponse(
-                status_code=500,
-                content={"error": f"Failed to fetch images: {str(e)}"}
-            )
-
-        # Save fetched images
-        for source_id, content in zip(SOURCE_IDS, jp2_contents):
-            if isinstance(content, Exception):
-                print(f"Error fetching source {source_id}: {content}")
-                continue
-                
-            file_path = os.path.join(input_dir, f"AIA_{SOURCE_ID_TO_CHANNEL_MAP[source_id]}.jp2")
-            with open(file_path, "wb") as f:
-                f.write(content)
-
-    # Update config for pipeline
-    config["data_dir"] = input_dir
-    config["output_dir"] = output_dir
-
-    try:
-        run_single_channel_pipeline(config, formatted_timestamp)
-    except Exception as e:
-        return JSONResponse(
-            status_code=500, 
-            content={"error": f"Pipeline failed: {str(e)}"}
-        )
-
-    # Get output files - Modified to search in threshold subdirectories
-    images_data = []
-    gcs_path_prefix = f"results/{formatted_timestamp}/{tmp_id}"
-
-    # Walk through all subdirectories in the output directory
-    for root, dirs, files in os.walk(output_dir):
-        for filename in files:
-            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".tiff")):
-                file_path = Path(root) / filename
-                
-                # Get file size
-                file_size = file_path.stat().st_size
-                
-                # Get relative path from output_dir
-                rel_path = os.path.relpath(file_path, output_dir)
-                
-                # Extract threshold from directory name
-                threshold_dir = os.path.basename(os.path.dirname(file_path))
-                
-                # Create storage object name
-                object_name = f"{gcs_path_prefix}/{rel_path}"
-                
-                # Save to storage (GCS or local)
-                storage_result = save_to_storage(str(file_path), object_name)
-
-                # Add image data
-                images_data.append({
-                    "filename": rel_path,
-                    "threshold": threshold_dir.replace("_", "."),
-                    "size": file_size,
-                    "url": storage_result["url"],
-                    "path": storage_result["path"],
-                    "storage_type": storage_result["storage_type"],
-                    "type": "image/" + filename.split('.')[-1].lower(),
-                })
-
-    if not images_data:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "No output images found"}
-        )
-
-    try:
-        # Cleanup temporary directories
-        shutil.rmtree(input_dir, ignore_errors=True)
-        
-        return {
-            "status": "success",
-            "images": images_data
-        }
-    
-    except Exception as e:
-        # Cleanup on error
-        shutil.rmtree(input_dir, ignore_errors=True)
-        shutil.rmtree(output_dir, ignore_errors=True)
-        
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Files encoding and transfer failed: {str(e)}"}
-        )
-
-@router.post("/analyze")
-async def analyze_jp2(files: List[UploadFile] = File(...)):
-    """Accepts multiple .jp2 files, runs the anomaly detection pipeline, and saves the results
-    to storage (GCS in production, local in development)."""
-
-    tmp_id = str(uuid.uuid4())
-    input_dir = f"temp_data/{tmp_id}"
-    output_dir = f"outputs/{tmp_id}"
-    os.makedirs(input_dir, exist_ok=True)
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Save all uploaded files
-    for file in files:
-        file_path = os.path.join(input_dir, file.filename)
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-
-    # Update config
-    config["data_dir"] = input_dir
-    config["output_dir"] = output_dir
-
-    try:
-        run_pipeline(config)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Pipeline failed: {e}"})
-
-    # Upload results to storage and return URLs
-    gcs_path_prefix = f"results/uploads/{tmp_id}"
-    output_files = []
-    
-    for root, dirs, files in os.walk(output_dir):
-        for filename in files:
-            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".tiff")):
-                file_path = os.path.join(root, filename)
-                
-                # Extract threshold from directory name if available
-                rel_path = os.path.relpath(file_path, output_dir)
-                parent_dir = os.path.basename(os.path.dirname(file_path))
-                threshold_str = parent_dir if parent_dir != output_dir else "default"
-                
-                # Create storage object name
-                object_name = f"{gcs_path_prefix}/{rel_path}"
-                
-                # Save to storage (GCS or local)
-                storage_result = save_to_storage(file_path, object_name)
-                
-                output_files.append({
-                    "filename": filename,
-                    "threshold": threshold_str.replace("_", ".") if "_" in threshold_str else threshold_str,
-                    "url": storage_result["url"],
-                    "path": storage_result["path"],
-                    "storage_type": storage_result["storage_type"],
-                    "type": "image/" + filename.split('.')[-1].lower()
-                })
-
-    if not output_files:
-        return JSONResponse(status_code=404, content={
-                            "error": "No output images found."})
-    
-    # Clean up temporary files
-    shutil.rmtree(input_dir, ignore_errors=True)
-
-    return {
-        "status": "success",
-        "images": output_files
-    }
-
-########## TESTING ENDPOINTS ##########
-
-@router.post("/fits-raw-files")
-async def fits_raw_files(request: dict = Body(...)):
-    """
-    Returns a list of all raw FITS files for the requested timestamp/channels.
-    """
-    timestamp = request.get("timestamp")
-    channels = request.get("channels", ["94", "131", "171", "193", "211", "304", "335"])
-    email = request.get("email", "j.c.g.gomez@astro.uio.no")
-    
-    if not timestamp:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Timestamp is required"}
-        )
-        
-    # Validate ISO format
-    iso_format = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
-    if not re.match(iso_format, timestamp):
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "Invalid timestamp format",
-                "details": "Timestamp must be in ISO format (YYYY-MM-DDThh:mm:ssZ)",
-                "example": "2024-01-01T12:00:00Z",
-                "received": timestamp
-            }
-        )
-        
-    # Format timestamp
-    try:
-        dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        formatted_timestamp = dt.strftime("%Y%m%d_%H%M%S")
-        jsoc_timestamp = dt.strftime("%Y.%m.%d_%H:%M:%S_TAI")
-    except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": f"Invalid timestamp format: {str(e)}"}
-        )
-
-    # Create temp directories
-    tmp_id = str(uuid.uuid4())
-    input_dir = f"temp_data/{tmp_id}/fits_data"
-    output_dir = f"outputs/{tmp_id}"
-    os.makedirs(input_dir, exist_ok=True)
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Create channel directories for FITS files
-    channel_dirs = {}
-    for channel in channels:
-        channel_dir = os.path.join(input_dir, f"aia_{channel}")
-        os.makedirs(channel_dir, exist_ok=True)
-        channel_dirs[channel] = channel_dir
-
-    # Define the coordinates for the query
-    bottom_left_coord = SkyCoord(center_x * u.arcsec - half_square_size * u.arcsec,
-                                 center_y * u.arcsec - half_square_size * u.arcsec,
-                                 frame='helioprojective')
-    top_right_coord = SkyCoord(center_x * u.arcsec + half_square_size * u.arcsec,
-                                center_y * u.arcsec + half_square_size * u.arcsec,
-                                frame='helioprojective')
-
-    # Fetch FITS files from JSOC
-    downloaded_files = []
-    for channel in channels:
-        # Convert channel to integer
-        channel_int = int(channel)
-        
-        # Define the time range and duration
-        start_time = dt.strftime(date_format)
-        end_time = (dt + datetime.timedelta(minutes=1)).strftime(date_format)  # Add 1 minute
-        sample_interval = 12 * u.s  # 12 seconds
-        
-        # Get the query result
-        query_result = get_query_sdo(
-            channel_int, bottom_left_coord, top_right_coord,
-            start_time, end_time, email, sample_interval,
-            tracking=False
-        )
-        
-        if query_result:
-            try:
-                # Download the files
-                files = Fido.fetch(query_result, path=channel_dirs[channel])
-                downloaded_files.extend(files)
-            except Exception as e:
-                print(f"Error downloading files for channel {channel}: {e}")
-        else:
-            print(f"No query result for channel {channel}")
-
-    if not downloaded_files:
-        return JSONResponse(
-            status_code=500,
-            content={"error": "No FITS files were downloaded."}
-        )
-
-    config.update({
-        "data_dir": input_dir,
-        "channels": channels,
-    })
-
-    fits_files = save_and_list_raw_fits(config)
-    if not fits_files:
-        return JSONResponse(status_code=404, content={"error": "No FITS files found."})
-    return {"status": "success", "fits_files": fits_files}
-
-@router.post("/test-jsoc-connection")
-async def test_jsoc_connection(request: dict = Body(...)):
-    """Test the connection to JSOC API and file downloads."""
-    timestamp = request.get("timestamp", "2024-05-01T12:00:00Z")
-    channels = request.get("channels", ["171"])  # Just one channel for testing
-    email = request.get("email", "j.c.g.gomez@astro.uio.no")
-    
-    try:
-        dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        
-        # Create a test directory
-        test_dir = f"test_jsoc_{uuid.uuid4()}"
-        os.makedirs(test_dir, exist_ok=True)
-        
-        # Log every step
-        logs = []
-        logs.append(f"Test directory created: {test_dir}")
-        
-        # Define coordinates
-        bottom_left_coord = SkyCoord(-1210 * u.arcsec, -1210 * u.arcsec, frame='helioprojective')
-        top_right_coord = SkyCoord(1210 * u.arcsec, 1210 * u.arcsec, frame='helioprojective')
-        logs.append("Coordinates defined")
-        
-        # Try to construct a query
-        channel_int = int(channels[0])
-        start_time = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
-        end_time = (dt + datetime.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%S.%f")
-        sample_interval = 12 * u.s
-        
-        logs.append(f"Attempting JSOC query: channel={channel_int}, time={start_time} to {end_time}")
-        
-        try:
-            # First, just create the query object
-            time_attr = a.Time(start_time, end_time)
-            wave_attr = a.Wavelength(channel_int * u.angstrom, channel_int * u.angstrom)
-            email_attr = a.jsoc.Notify(email)
-            sample = a.Sample(sample_interval)
-            series = a.jsoc.Series.aia_lev1_euv_12s
-            
-            logs.append("Query attributes created successfully")
-            
-            # Then try the actual query
-            query = Fido.search(time_attr, series, wave_attr, email_attr, sample)
-            logs.append(f"Query successful. Results: {len(query)}")
-            logs.append(f"Query details: {query}")
-            
-            # Try downloading a single file
-            logs.append("Attempting download...")
-            files = Fido.fetch(query, path=test_dir, max_conn=1)
-            logs.append(f"Download successful! Files: {files}")
-            
-            # List the directory contents
-            dir_contents = os.listdir(test_dir)
-            logs.append(f"Directory contents: {dir_contents}")
-            
-        except Exception as e:
-            logs.append(f"JSOC query/fetch failed: {str(e)}")
-            logs.append(f"Exception type: {type(e)}")
-            import traceback
-            logs.append(f"Traceback: {traceback.format_exc()}")
-        
-        # Clean up
-        shutil.rmtree(test_dir, ignore_errors=True)
-        logs.append("Test directory removed")
-        
-        return {
-            "status": "test_complete",
-            "logs": logs
-        }
-    except Exception as e:
-        import traceback
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": f"Test failed: {str(e)}",
-                "traceback": traceback.format_exc()
-            }
-        )

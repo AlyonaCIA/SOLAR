@@ -5,6 +5,7 @@ matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import matplotlib.patches as mpatches
+import io
 
 def plot_single_channel(
     masked_data,
@@ -34,7 +35,7 @@ def plot_single_channel(
             
             # Plot the original data with proper scaling
             plt.imshow(masked_data, cmap='sdoaia' + str(channel) if channel.isdigit() else 'viridis', 
-                      vmin=vmin, vmax=vmax, origin='lower')
+                      vmin=vmin, vmax=vmax, origin='lower', alpha=0.7)
             
             # Overlay clusters if provided
             if cluster_mask_global is not None and n_clusters_global > 0:
@@ -86,25 +87,33 @@ def plot_single_channel(
                 framealpha=0.7
             )
         
-        # Save the figure with descriptive filename
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='jpeg', dpi=100)
+        plt.close()
+        
+        # Reset buffer position to beginning
+        buffer.seek(0)
+        
+        # Create filename for reference (but don't save to disk)
         filename = f'aia_{channel}'
         if anomaly_threshold is not None:
             threshold_str = str(abs(anomaly_threshold)).replace('.', '_')
             filename += f'_threshold_{threshold_str}'
         filename += '.png'
         
-        output_path = os.path.join(output_dir, filename)
-        plt.savefig(output_path, bbox_inches='tight', dpi=150)
-        plt.close()
+        object_name = os.path.join(output_dir, filename)
         
-        print(f"Saved visualization for channel {channel} to {output_path}")
-        return output_path
+        print(f"Generated visualization for channel {channel}")
+        
+        # Return buffer and object name instead of file path
+        return buffer, object_name
+    
     except Exception as e:
         print(f"Error in plot_single_channel for {channel}: {e}")
         import traceback
         traceback.print_exc()
-        return None
-
+        return None, None
+    
 def plot_results(
     masked_data_list,
     channel_names,
@@ -158,13 +167,16 @@ def plot_results(
                     if np.max(norm_data) > np.min(norm_data):
                         norm_data = (norm_data - np.min(norm_data)) / (np.max(norm_data) - np.min(norm_data))
                     
-                    plt.imshow(norm_data, cmap='gray', alpha=0.7)
+                    # Plot the background image (no colorbar)
+                    plt.imshow(norm_data, cmap='gray', alpha=0.7)  
                 
                 # Overlay clusters with transparency
                 cluster_overlay = np.ma.masked_where(cluster_mask == 0, cluster_mask)
-                plt.imshow(cluster_overlay, cmap=cluster_cmap, alpha=0.6)
+                clust_img = plt.imshow(cluster_overlay, cmap=cluster_cmap, alpha=0.6)
                 
-                plt.colorbar(label='Cluster ID')
+                # Only add colorbar for clusters
+                plt.colorbar(clust_img, label='Cluster ID')
+                
                 plt.title(f'Channel {channel} with Clusters (Threshold: {threshold})')
                 plt.axis('off')
                 plt.savefig(os.path.join(output_dir, f'channel_{channel}_clusters.png'), 
