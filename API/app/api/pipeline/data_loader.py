@@ -10,7 +10,8 @@ from skimage.transform import resize
 
 def load_fits_data(channel_dir: str) -> Tuple[np.ndarray, dict]:
     """Load FITS files from a directory and return data and metadata."""
-    fits_pattern = os.path.join(channel_dir, "*image*.fits")
+    # Change the pattern to match AIA files from VSO (*.fits instead of *image*.fits)
+    fits_pattern = os.path.join(channel_dir, "*.fits")
     fits_files = glob.glob(fits_pattern)
     
     if not fits_files:

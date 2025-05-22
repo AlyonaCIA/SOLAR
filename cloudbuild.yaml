@@ -22,8 +22,8 @@ steps:
       '--platform', 'managed',
       '--region', 'us-central1',
       '--allow-unauthenticated',
-      '--memory', '8Gi',
-      '--cpu', '4',
+      '--memory', '20Gi',
+      '--cpu', '6',
       '--timeout', '3600s', 
       '--concurrency', '10',
       '--port', '8080'

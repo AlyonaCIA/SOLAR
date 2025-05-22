@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import datetime
+import io
 
 # Import the necessary pipeline modules
 from app.api.pipeline.data_loader import load_fits_data, create_circular_mask, preprocess_image
@@ -21,6 +22,9 @@ def run_pipeline(config):
     # Create output directory if it doesn't exist
     output_dir = config["output_dir"]
     os.makedirs(output_dir, exist_ok=True)
+    
+    # List to collect visualization results (buffer, object_name)
+    visualization_results = []
     
     # Step 1: Load and preprocess data
     print("\n--- Step 1: Loading and preprocessing data ---\n")
@@ -157,9 +161,6 @@ def run_pipeline(config):
             print(f"No anomalies found for threshold {threshold}. Skipping clustering.")
             continue
         
-        # Prepare for clustering - only cluster the anomalies
-        # anomaly_features = prepared_data[anomaly_mask]
-        
         # Perform K-means clustering on anomalies
         cluster_labels, inertia = perform_kmeans_clustering(
             prepared_data, 
@@ -202,30 +203,34 @@ def run_pipeline(config):
             "threshold_dir": threshold_dir
         }
         
-        # Plot results - create both overview plot and individual channel plots
-        
-        # Plot anomaly map
-        plt.figure(figsize=(10, 8))
+        # Plot anomaly map and add to visualization results
+        plt.figure(figsize=(8, 6))
         plt.imshow(anomaly_map_2d, cmap='coolwarm_r')
         plt.colorbar(label='Anomaly Score')
-        plt.title(f'Anomaly Map (Threshold: {threshold})')
+        plt.title(f'Anomaly Map (T:{threshold})')
         plt.axis('off')
-        plt.savefig(os.path.join(threshold_dir, 'anomaly_map.png'), bbox_inches='tight', dpi=150)
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='jpeg', dpi=75, bbox_inches=None)
         plt.close()
+        buffer.seek(0)
+        visualization_results.append((buffer, f'anomaly_map_{threshold_str}.jpg'))
         
-        # Plot cluster map
+        # Plot cluster map and add to visualization results
         if n_clusters > 0:
-            plt.figure(figsize=(10, 8))
+            plt.figure(figsize=(8, 6))
             plt.imshow(cluster_mask_2d, cmap=cluster_cmap)
             plt.colorbar(label='Cluster ID')
-            plt.title(f'Cluster Map (Threshold: {threshold}, Clusters: {n_clusters})')
+            plt.title(f'Cluster Map (T:{threshold}, {n_clusters} clusters)')
             plt.axis('off')
-            plt.savefig(os.path.join(threshold_dir, 'cluster_map.png'), bbox_inches='tight', dpi=150)
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='jpeg', dpi=75, bbox_inches=None)
             plt.close()
+            buffer.seek(0)
+            visualization_results.append((buffer, f'cluster_map_{threshold_str}.jpg'))
         
-        # Plot each channel with overlaid clusters
+        # Plot each channel with overlaid clusters and collect results
         for i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
-            plot_single_channel(
+            vis_result = plot_single_channel(
                 data,
                 cluster_mask_global=cluster_mask_2d,
                 cluster_cmap_global=cluster_cmap,
@@ -239,24 +244,36 @@ def run_pipeline(config):
                 file_type=config.get("file_type", "jp2"),
                 clustering_method_name="K-Means"
             )
+            if vis_result is not None and vis_result[0] is not None:
+                visualization_results.append(vis_result)
     
     # Generate individual channel visualizations
-    print("\n--- Step 4: Generating channel visualizations ---\n")
-    channel_dir = os.path.join(output_dir, "channel_results")
-    os.makedirs(channel_dir, exist_ok=True)
+    # print("\n--- Step 4: Generating channel visualizations ---\n")
+    # channel_dir = os.path.join(output_dir, "channel_results")
+    # os.makedirs(channel_dir, exist_ok=True)
     
-    for i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
-        try:
-            plot_single_channel(
-                data,
-                channel=channel,
-                output_dir=channel_dir
-            )
-        except Exception as e:
-            print(f"Error visualizing channel {channel}: {e}")
+    # for i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
+    #     try:
+    #         vis_result = plot_single_channel(
+    #             data,
+    #             channel=channel,
+    #             output_dir=channel_dir
+    #         )
+    #         if vis_result is not None and vis_result[0] is not None:
+    #             visualization_results.append(vis_result)
+    #     except Exception as e:
+    #         print(f"Error visualizing channel {channel}: {e}")
     
-    print("\nPipeline completed successfully.")
-    return results
+    print(f"\nPipeline completed successfully. Generated {len(visualization_results)} visualizations.")
+    
+    # Return results including visualization results
+    return {
+        "visualization_results": visualization_results,
+        "thresholds": anomaly_thresholds,
+        "num_anomalies": sum(results.get(t, {}).get("anomaly_count", 0) for t in anomaly_thresholds),
+        "num_clusters": sum(results.get(t, {}).get("n_clusters", 0) for t in anomaly_thresholds),
+        **results
+    }
 
 def run_single_channel_pipeline(config, timestamp=None):
     """
@@ -299,6 +316,9 @@ def run_single_channel_pipeline(config, timestamp=None):
     anomaly_map_2d[valid_pixel_mask_2d] = anomaly_scores
 
     total_pixels_resized = config["image_size"] * config["image_size"]
+    
+    # List to collect visualization results
+    visualization_results = []
 
     # --- Step 4: Thresholding anomalies and clustering ---
     print("Step 4: Thresholding anomalies and clustering...\n")
@@ -352,7 +372,7 @@ def run_single_channel_pipeline(config, timestamp=None):
             threshold_dir = os.path.join(config["output_dir"], f"threshold_{str(abs(anomaly_threshold)).replace('.', '_')}")
             os.makedirs(threshold_dir, exist_ok=True)
             
-            plot_single_channel(
+            vis_result = plot_single_channel(
                 masked_data=channel_data,
                 cluster_mask_global=cluster_mask_final,
                 cluster_cmap_global=cluster_cmap_final,
@@ -367,9 +387,11 @@ def run_single_channel_pipeline(config, timestamp=None):
                 clustering_method_name="K-Means",
                 timestamp=timestamp
             )
+            if vis_result is not None and vis_result[0] is not None:
+                visualization_results.append(vis_result)
 
-    print("Pipeline execution completed!")
-    return True
+    print(f"Pipeline execution completed! Generated {len(visualization_results)} visualizations.")
+    return {"visualization_results": visualization_results}
 
 ######### TESTING FUNCTIONS #########
 
