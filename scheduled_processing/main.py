@@ -23,7 +23,7 @@ app = Flask(__name__)
 # Constants
 SOLAR_API_URL = "https://solar-api-865605005704.us-central1.run.app"
 GCS_BUCKET_NAME = "mlopsdev2-solar-images"
-PROCESSED_IMAGES_PREFIX = "pre_processed"
+PROCESSED_IMAGES_PREFIX = "results/fits"
 
 # Initialize GCS client
 storage_client = storage.Client()
@@ -138,6 +138,22 @@ def process_solar_images(timestamp=None):
             if timestamp in processing_locks:
                 del processing_locks[timestamp]
 
+@app.route("/")
+def index():
+    """Root endpoint with links to other endpoints"""
+    return jsonify({
+        "status": "ok",
+        "endpoints": {
+            "list": "/list\n",
+            "latest": "/latest\n", 
+            "images": "/images/<timestamp>\n",
+            "healthz": "/healthz\n",
+            "process": "/process\n",
+            "start_scheduler": "/start-scheduler\n",
+            "start_processing": "/start-processing\n"
+        }
+    })
+
 @app.route("/process", methods=["POST"])
 def process_endpoint():
     """Endpoint to trigger image processing for a specific time or current hour"""
@@ -148,71 +164,123 @@ def process_endpoint():
 
 @app.route("/list", methods=["GET"])
 def list_processed():
-    """List all processed timestamps"""
+    """List all processed timestamps with debug info"""
+    debug_info = {
+        "bucket": GCS_BUCKET_NAME,
+        "prefix": f"{PROCESSED_IMAGES_PREFIX}/",
+    }
+    
+    # Try to list some blobs directly to confirm access
+    try:
+        all_blobs = list(storage_client.list_blobs(
+            GCS_BUCKET_NAME, 
+            prefix=f"{PROCESSED_IMAGES_PREFIX}/",
+            max_results=10
+        ))
+        debug_info["raw_blobs"] = [b.name for b in all_blobs]
+    except Exception as e:
+        debug_info["error"] = str(e)
+        
+    # Try with prefixes as before
     blobs = storage_client.list_blobs(
         GCS_BUCKET_NAME, 
         prefix=f"{PROCESSED_IMAGES_PREFIX}/", 
         delimiter="/"
     )
     
-    # Extract the timestamp from the prefix paths
+    # Iterate to populate prefixes
+    for _ in blobs:
+        pass
+
     timestamps = []
+    prefixes_list = []
     for prefix in blobs.prefixes:
-        # Format: "pre_processed/2025-05-19T05:00:00Z/"
+        prefixes_list.append(prefix)
+        # Extract timestamp from the prefix path
         timestamp = prefix.strip("/").split("/")[-1]
         timestamps.append(timestamp)
     
-    # Sort by timestamp (newest first)
+    debug_info["prefixes"] = prefixes_list
     timestamps.sort(reverse=True)
     
     return jsonify({
         "status": "success",
         "count": len(timestamps),
-        "timestamps": timestamps
+        "timestamps": timestamps,
+        "debug_info": debug_info
     })
 
 @app.route("/images/<timestamp>", methods=["GET"])
 def get_processed_images(timestamp):
     """Get processed images for a specific timestamp"""
-    metadata_blob = bucket.blob(f"{PROCESSED_IMAGES_PREFIX}/{timestamp}/metadata.json")
+    # List all objects under the timestamp prefix to find available files
+    blobs = list(storage_client.list_blobs(
+        GCS_BUCKET_NAME,
+        prefix=f"{PROCESSED_IMAGES_PREFIX}/{timestamp}/"
+    ))
     
-    if not metadata_blob.exists():
+    if not blobs:
         return jsonify({
             "status": "error", 
             "error": f"No processed images found for timestamp {timestamp}"
         }), 404
     
-    try:
-        metadata = json.loads(metadata_blob.download_as_string())
-        return jsonify({
-            "status": "success",
-            "timestamp": timestamp,
-            "processed_at": metadata["processed_at"],
-            "channels": metadata["channels"],
-            "images": metadata["images"]
-        })
-    except Exception as e:
-        logger.exception(f"Error fetching metadata for {timestamp}: {e}")
-        return jsonify({
-            "status": "error",
-            "error": f"Error fetching metadata: {str(e)}"
-        }), 500
+    # Extract image paths and group by threshold
+    image_paths = [b.name for b in blobs if b.name.endswith('.png')]
+    
+    # Group by wavelength channel and threshold
+    images_by_channel = {}
+    for path in image_paths:
+        # Parse the filename to extract channel and threshold
+        filename = path.split('/')[-1]
+        if filename.startswith('aia_'):
+            parts = filename.replace('.png', '').split('_')
+            channel = parts[1]
+            if len(parts) > 2:
+                threshold = parts[3]
+                if threshold not in images_by_channel:
+                    images_by_channel[threshold] = {}
+                images_by_channel[threshold][channel] = {
+                    "url": f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/{path}",
+                    "path": path
+                }
+    
+    return jsonify({
+        "status": "success",
+        "timestamp": timestamp,
+        "images_by_threshold": images_by_channel
+    })
 
 @app.route("/latest", methods=["GET"])
 def get_latest():
     """Get the latest processed images"""
-    blobs = list(bucket.list_blobs(prefix=f"{PROCESSED_IMAGES_PREFIX}/", delimiter="/"))
-    
+    # List some raw blobs for debugging
+    debug_info = {
+        "raw_blobs": [b.name for b in list(bucket.list_blobs(
+            prefix=f"{PROCESSED_IMAGES_PREFIX}/",
+            max_results=5
+        ))]
+    }
+
+    # Important: You need to explicitly iterate over the prefixes
     prefixes = []
-    for prefix in storage_client.list_blobs(
-        GCS_BUCKET_NAME, prefix=f"{PROCESSED_IMAGES_PREFIX}/", delimiter="/"
-    ).prefixes:
-        prefixes.append(prefix)
+    blob_iter = storage_client.list_blobs(
+        GCS_BUCKET_NAME, 
+        prefix=f"{PROCESSED_IMAGES_PREFIX}/", 
+        delimiter="/"
+    )
+    # Iterate to populate prefixes
+    for _ in blob_iter:
+        pass
+    
+    prefixes = list(blob_iter.prefixes)
+    debug_info["prefixes"] = list(prefixes)
     
     if not prefixes:
         return jsonify({
             "status": "error",
-            "error": "No processed images found"
+            "error": "No processed images found",
+            "debug_info": debug_info
         }), 404
     
     # Sort prefixes to get the latest timestamp
