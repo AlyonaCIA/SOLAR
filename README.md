@@ -28,6 +28,9 @@ This work represents a novel application of unsupervised techniques to the speci
     *   Configurable image downsampling (e.g., to 512x512) for computational tractability.
     *   Robust inter-channel intensity normalization using `RobustScaler` to handle outliers (e.g., flares).
     *   Handling of off-limb/missing pixels (`NaN`).
+
+    **Additional documentation**: See the [API Reference](API\README.md).
+
 *   **Unsupervised Anomaly Detection:** Utilizes `Isolation Forest` to assign anomaly scores based on multi-channel pixel intensities.
 *   **Anomaly Characterization:** Applies clustering algorithms (`K-Means`, `MiniBatch K-Means`, `GMM`) to group detected anomalies based on their spectral signatures.
 *   **Visualization:** Generates multi-panel plots overlaying detected anomaly clusters onto the original AIA channel images for intuitive interpretation.
@@ -206,3 +209,7 @@ Bibtex
 Contact
 For questions or inquiries, please contact:
 Alyona Carolina Ivanova Araujo - alenac.ivanovaa@gmail.com
+
+
+
+

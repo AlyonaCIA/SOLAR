@@ -1,12 +1,14 @@
 
 # Anomaly Detection and Clustering Pipeline
 
-This pipeline is designed to perform anomaly detection on images (in JP2 format) and apply a clustering process using the K-Means algorithm. The pipeline follows these steps:
+This pipeline performs anomaly detection on images (in FITS or JP2 format) and applies clustering using the K-Means algorithm. The main steps are:
 
-1. **Loading and Preprocessing Data**: Loads JP2 images, applies masks, and prepares the data for anomaly detection.
-2. **Anomaly Detection**: Uses the Isolation Forest algorithm to detect anomalies in the images.
-3. **Thresholding and Clustering**: Applies different thresholds to classify anomalies and then uses K-Means for clustering the detected anomalies.
-4. **Visualization**: Generates visualizations of the results, including anomaly maps and clustering results.
+1. **Loading and Preprocessing Data**: Loads solar images, applies masks, and prepares the data for anomaly detection.
+2. **Anomaly Detection**: Uses the Isolation Forest algorithm to identify anomalies in the images.
+3. **Thresholding and Clustering**: Applies multiple thresholds to classify anomalies, followed by clustering with K-Means.
+4. **Visualization**: Generates visualizations such as anomaly maps and clustering results.
+
+---
 
 ## Requirements
 
@@ -15,7 +17,7 @@ This pipeline requires the following libraries:
 - `numpy`
 - `matplotlib`
 - `tqdm`
-- `sklearn`
+- `scikit-learn`
 - `pandas`
 
 You can install these dependencies using `pip` or a `requirements.txt` file:
@@ -24,73 +26,86 @@ You can install these dependencies using `pip` or a `requirements.txt` file:
 pip install numpy matplotlib tqdm scikit-learn pandas
 ```
 
-Make sure to activate your virtual environment if you're using one before installing the dependencies.
+Ensure you activate your virtual environment before installing the dependencies if you're using one.
+
+---
 
 ## Project Structure
 
-The project is structured as follows:
+The project directory is organized as follows:
 
 ```
-├── data_loader.py           # Functions for loading data
+├── data_loader.py           # Functions for loading image data
 ├── model.py                 # Functions for anomaly detection and clustering
-├── preprocess.py            # Functions for data preprocessing
-├── visualization.py         # Functions for generating visualizations
-├── pipeline.py              # Main pipeline script that runs the entire process
-├── output_figures/          # Output folder for generated visualizations
+├── preprocess.py            # Functions for preprocessing the input data
+├── visualization.py         # Functions for generating plots and visual outputs
+├── pipeline.py              # Main script that runs the full pipeline
+├── output_figures/          # Directory for saving generated visualizations
 ├── config.py                # Configuration file for pipeline parameters
 ```
 
+---
+
 ## Input Files
 
-The pipeline expects the input data to be JP2 image files with a specified image size (default is 2048x2048 pixels). These files should be located in the `data_dir` folder as specified in the pipeline configuration.
+The pipeline expects input images in **FITS** or **JP2** format, depending on the `file_type` parameter in the configuration. Input images should match the specified size (default: **2048x2048** pixels) and be located in the folder defined by `data_dir` in the configuration file.
+
+---
 
 ## Usage
 
 ### 1. Configuration
 
-Edit the `config.py` file to set the pipeline configuration. The most important parameters are:
+Edit the `config.py` file to set the desired pipeline parameters. Key configuration options include:
 
-- `data_dir`: Directory where the input JP2 files are located.
-- `output_dir`: Directory where generated visualizations will be saved.
-- `image_size`: Size of the input images (default is 2048).
-- `anomaly_thresholds`: List of thresholds for anomaly detection.
-- `n_clusters`: Number of clusters to generate in the K-Means algorithm.
+- `data_dir`: Directory containing the input image files.
+- `output_dir`: Directory where output visualizations will be saved.
+- `image_size`: Size of input images (default: 2048).
+- `anomaly_thresholds`: List of thresholds to apply during anomaly detection.
+- `n_clusters`: Number of clusters to use in K-Means clustering.
+
+---
 
 ### 2. Running the Pipeline
 
-Once you've configured the parameters, you can run the pipeline as follows:
+Once configured, run the pipeline with:
 
 ```bash
 python pipeline.py
 ```
 
-The pipeline will execute the following steps:
+The pipeline executes the following:
 
-1. **Creating the output directory**: If it does not exist, the output directory will be created.
-2. **Loading and preprocessing data**: Loads the images and applies the necessary preprocessing.
-3. **Anomaly detection**: Applies the Isolation Forest model to detect anomalies.
-4. **Clustering**: Uses K-Means to cluster the detected anomalies.
-5. **Visualization**: Generates visualizations of the results and saves them to the output directory.
+1. **Output directory setup**: Creates the output directory if it does not exist.
+2. **Data loading and preprocessing**: Reads the images and prepares them for analysis.
+3. **Anomaly detection**: Applies Isolation Forest to identify anomalous regions.
+4. **Clustering**: Uses K-Means to group the detected anomalies.
+5. **Visualization**: Saves generated plots (anomaly and clustering maps) to the output directory.
 
-### 3. Generated Files
+---
 
-After running the pipeline, the generated visualizations will be saved in the `output_dir` folder. These visualizations include:
+### 3. Output
+
+After execution, the pipeline will save visual results in the `output_dir` folder, including:
 
 - Anomaly detection maps.
-- Clustering maps generated by the K-Means algorithm.
+- Clustering maps generated using K-Means.
+
+---
 
 ### 4. Customization
 
-You can customize various aspects of the pipeline via the `config.py` file, such as:
+You can easily customize the behavior of the pipeline by modifying the `config.py` file. Adjustable parameters include:
 
-- The thresholds for anomaly detection.
-- The number of clusters for K-Means.
-- Parameters for the anomaly detection and clustering models.
+- Anomaly detection thresholds.
+- Number of clusters for K-Means.
+- Hyperparameters for the Isolation Forest and K-Means algorithms.
+
+---
 
 ## Contributing
 
-If you'd like to contribute to this project, you can do so in the following ways:
+Contributions are welcome! You can:
 
-- Open issues to report bugs or suggest improvements.
-- Create pull requests with new features or fixes.
-
+- Open issues to report bugs or suggest enhancements.
+- Submit pull requests with new features, improvements, or fixes.
