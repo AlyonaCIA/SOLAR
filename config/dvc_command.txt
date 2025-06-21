@@ -1,0 +1,3 @@
+# Asumiendo que la dvc_key se encuentra en config
+
+dvc remote modify --local gcp-remote credentialpath config/dvc_key.json

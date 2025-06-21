@@ -1,0 +1,100 @@
+# cloudbuild.yaml for Solar Preprocessor Service (External scheduling only)
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}', './scheduled_processing']
+    id: 'build-image'
+
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}']
+    id: 'push-image'
+
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image=gcr.io/$PROJECT_ID/${_SERVICE_NAME}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--timeout=3600s'
+      - '--concurrency=1'
+      - '--service-account=${_SERVICE_ACCOUNT}'
+    id: 'deploy-service'
+
+  # Set up hourly scheduler job to call the process endpoint directly 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        if gcloud scheduler jobs describe ${_SERVICE_NAME}-hourly --location=${_REGION} 2>/dev/null; then
+          echo "Updating existing scheduler job"
+          gcloud scheduler jobs update http ${_SERVICE_NAME}-hourly \
+            --schedule="0 * * * *" \
+            --uri="https://${_SERVICE_NAME}-${_REGION_TAG}.a.run.app/process" \
+            --http-method=POST \
+            --headers="Content-Type=application/json" \
+            --message-body='{}' \
+            --location=${_REGION} \
+            --attempt-deadline=30m
+        else
+          echo "Creating new scheduler job"
+          gcloud scheduler jobs create http ${_SERVICE_NAME}-hourly \
+            --schedule="0 * * * *" \
+            --uri="https://${_SERVICE_NAME}-${_REGION_TAG}.a.run.app/process" \
+            --http-method=POST \
+            --headers="Content-Type=application/json" \
+            --message-body='{}' \
+            --location=${_REGION} \
+            --attempt-deadline=30m
+        fi
+    id: 'create-hourly-job'
+
+  # Create a daily job to process images at noon UTC
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        if gcloud scheduler jobs describe ${_SERVICE_NAME}-daily-noon --location=${_REGION} 2>/dev/null; then
+          echo "Updating existing daily scheduler job"
+          gcloud scheduler jobs update http ${_SERVICE_NAME}-daily-noon \
+            --schedule="0 12 * * *" \
+            --uri="https://${_SERVICE_NAME}-${_REGION_TAG}.a.run.app/process" \
+            --http-method=POST \
+            --headers="Content-Type=application/json" \
+            --message-body='{}' \
+            --location=${_REGION} \
+            --attempt-deadline=30m
+        else
+          echo "Creating new daily scheduler job"
+          gcloud scheduler jobs create http ${_SERVICE_NAME}-daily-noon \
+            --schedule="0 12 * * *" \
+            --uri="https://${_SERVICE_NAME}-${_REGION_TAG}.a.run.app/process" \
+            --http-method=POST \
+            --headers="Content-Type=application/json" \
+            --message-body='{}' \
+            --location=${_REGION} \
+            --attempt-deadline=30m
+        fi
+    id: 'create-daily-job'
+
+images:
+  - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}'
+
+substitutions:
+  _SERVICE_NAME: solar-preprocessor
+  _REGION: us-central1
+  _REGION_TAG: rrefnojama-uc
+  _SERVICE_ACCOUNT: 865605005704-compute@developer.gserviceaccount.com
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamic_substitutions: true

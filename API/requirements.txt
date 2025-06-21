@@ -1,0 +1,17 @@
+fastapi==0.115.12
+matplotlib==3.10.1
+numpy==2.2.5
+Pillow==11.2.1
+pydantic==1.10.21
+scikit_learn==1.6.1
+scikit-image
+sunpy[all]
+tqdm==4.67.1
+uvicorn
+python-multipart
+glymur>=0.9.0
+imageio>=2.19.0
+google-cloud-storage>=2.9.0
+tqdm>=4.64.0
+aiohttp>=3.8.0
+astropy>=5.1

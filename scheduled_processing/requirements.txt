@@ -1,0 +1,4 @@
+flask>=2.0.0
+google-cloud-storage>=2.0.0
+requests>=2.25.0
+apscheduler>=3.9.0

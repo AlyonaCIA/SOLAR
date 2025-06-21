@@ -1,0 +1,6 @@
+outs:
+- md5: 62270037b367988daeb04f534448c942.dir
+  size: 10961735428
+  nfiles: 1206
+  hash: md5
+  path: sdo_data
