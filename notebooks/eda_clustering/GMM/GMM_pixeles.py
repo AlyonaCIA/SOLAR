@@ -1,6 +1,5 @@
 import argparse
 import os
-from typing import List, Tuple
 
 import matplotlib
 import matplotlib.colors
@@ -9,30 +8,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sunpy.map
 from skimage.transform import resize
-from sklearn.mixture import GaussianMixture
 from sklearn.ensemble import IsolationForest
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
 
-matplotlib.use('Agg')  # Use Agg backend for saving files
+matplotlib.use("Agg")  # Use Agg backend for saving files
 
 
 # --- Helper Functions ---
-def load_fits_data(channel_dir: str) -> Tuple[np.ndarray, dict]:
+def load_fits_data(channel_dir: str) -> tuple[np.ndarray, dict]:
     """Load FITS data and metadata from a single channel directory.
 
     Loads only the *first* FITS file in the directory.
     """
-    fits_files = [
-        f for f in os.listdir(channel_dir) if f.endswith(".fits")
-    ]
+    fits_files = [f for f in os.listdir(channel_dir) if f.endswith(".fits")]
     if not fits_files:
-        raise FileNotFoundError(
-            f"No FITS files found in directory: {channel_dir}"
-        )
+        raise FileNotFoundError(f"No FITS files found in directory: {channel_dir}")
 
-    fits_path = os.path.join(
-        channel_dir, fits_files[0]
-    )  # Load the first FITS file
+    fits_path = os.path.join(channel_dir, fits_files[0])  # Load the first FITS file
     aia_map = sunpy.map.Map(fits_path)
     return aia_map.data, aia_map.meta
 
@@ -54,13 +47,11 @@ def create_circular_mask(data: np.ndarray, metadata: dict) -> np.ndarray:
     solar_radius_pixels = int(solar_radius_arcsec / abs(cdelt1))
 
     y, x = np.ogrid[:ny, :nx]
-    distance_from_center = np.sqrt((x - x_center)**2 + (y - y_center)**2)
+    distance_from_center = np.sqrt((x - x_center) ** 2 + (y - y_center) ** 2)
     return distance_from_center <= solar_radius_pixels
 
 
-def preprocess_image(
-    data: np.ndarray, mask: np.ndarray, size: int = None
-) -> np.ndarray:
+def preprocess_image(data: np.ndarray, mask: np.ndarray, size: int = None) -> np.ndarray:
     """Resizes the image and applies the mask, setting masked areas to NaN.
 
     Args:
@@ -73,12 +64,8 @@ def preprocess_image(
         np.ndarray: Preprocessed image data with mask applied and resized.
     """
     if size is not None:
-        resized_data = resize(
-            data, (size, size), mode='reflect', anti_aliasing=True
-        )
-        resized_mask = resize(
-            mask, (size, size), mode='reflect', anti_aliasing=False
-        ) > 0.5
+        resized_data = resize(data, (size, size), mode="reflect", anti_aliasing=True)
+        resized_mask = resize(mask, (size, size), mode="reflect", anti_aliasing=False) > 0.5
         masked_data = resized_data.copy()
         masked_data[~resized_mask] = np.nan  # Apply mask
         return masked_data
@@ -89,9 +76,7 @@ def preprocess_image(
 
 
 # --- Data Preparation and Anomaly Detection ---
-def prepare_data_concatenated(
-    masked_data_list: list
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def prepare_data_concatenated(masked_data_list: list) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Concatenates masked data from multiple channels, handles NaNs, and scales the
     data.
 
@@ -105,12 +90,8 @@ def prepare_data_concatenated(
             - valid_pixel_mask: 1D boolean mask (True for valid pixels).
             - nan_mask: 1D boolean mask (True for pixels with NaN in any channel).
     """
-    stacked_data = np.stack(
-        masked_data_list, axis=-1
-    )  # (height, width, channels)
-    reshaped_data = stacked_data.reshape(
-        (-1, len(masked_data_list))
-    )  # (pixels, channels)
+    stacked_data = np.stack(masked_data_list, axis=-1)  # (height, width, channels)
+    reshaped_data = stacked_data.reshape((-1, len(masked_data_list)))  # (pixels, channels)
     nan_mask = np.isnan(reshaped_data).any(axis=1)  # Rows with any NaN
     cleaned_data = reshaped_data[~nan_mask]  # Remove rows with NaNs
     scaler = RobustScaler()
@@ -118,9 +99,7 @@ def prepare_data_concatenated(
     return scaled_data, ~nan_mask, nan_mask
 
 
-def detect_anomalies_isolation_forest(
-    data: np.ndarray, contamination: float, random_state: int
-) -> np.ndarray:
+def detect_anomalies_isolation_forest(data: np.ndarray, contamination: float, random_state: int) -> np.ndarray:
     """Detects anomalies using Isolation Forest and returns anomaly scores.
 
     Args:
@@ -133,26 +112,22 @@ def detect_anomalies_isolation_forest(
                      Lower scores indicate higher anomaly.
     """
     iso_forest = IsolationForest(
-        contamination=contamination, random_state=random_state  # Use random_state here
+        contamination=contamination,
+        random_state=random_state,  # Use random_state here
     )
     iso_forest.fit(data)
     return iso_forest.decision_function(data)  # Return anomaly *scores*
 
 
 # --- Clustering ---
-def perform_gmm_clustering(
-    data: np.ndarray,
-    n_clusters: int,
-    random_state: int = 42) -> Tuple[np.ndarray, float]:
+def perform_gmm_clustering(data: np.ndarray, n_clusters: int, random_state: int = 42) -> tuple[np.ndarray, float]:
     """Performs Gaussian Mixture Model clustering."""
     gmm = GaussianMixture(n_components=n_clusters, random_state=random_state)
     labels = gmm.fit_predict(data)
     return labels, gmm.lower_bound_
 
 
-def determine_optimal_k_elbow(
-    data: np.ndarray, max_k: int = 10, random_state: int = 42
-) -> int:
+def determine_optimal_k_elbow(data: np.ndarray, max_k: int = 10, random_state: int = 42) -> int:
     """Applies the Elbow Method to suggest an optimal number of clusters (k).
 
     Args:
@@ -170,10 +145,10 @@ def determine_optimal_k_elbow(
 
     # Plot the Elbow curve
     plt.figure(figsize=(8, 6))
-    plt.plot(range(1, max_k + 1), inertias, marker='o')
-    plt.title('Elbow Method For Optimal k')
-    plt.xlabel('Number of clusters (k)')
-    plt.ylabel('Inertia')
+    plt.plot(range(1, max_k + 1), inertias, marker="o")
+    plt.title("Elbow Method For Optimal k")
+    plt.xlabel("Number of clusters (k)")
+    plt.ylabel("Inertia")
     plt.grid(True)
     elbow_plot_path = "elbow_plot.png"
     plt.savefig(elbow_plot_path)
@@ -192,8 +167,8 @@ def create_cluster_mask(
     anomaly_mask: np.ndarray,
     labels: np.ndarray,
     valid_pixel_mask: np.ndarray,
-    image_size: int  # image_size is still passed but not strictly used anymore
-) -> Tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
+    image_size: int,  # image_size is still passed but not strictly used anymore
+) -> tuple[np.ndarray, matplotlib.colors.ListedColormap, list, int]:
     """Creates a 2D cluster mask from anomaly mask and cluster labels.
 
     Args:
@@ -225,56 +200,44 @@ def create_cluster_mask(
         print(f"Number of clusters (n_clusters): {n_clusters}")
         # Modified color palette, removed dark blue, added more distinct colors
         cluster_colors = [
-            '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-            '#8c564b', '#e377c2', '#7f7f7f'  # No blue, added grey
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",  # No blue, added grey
         ]
-        cluster_cmap = matplotlib.colors.ListedColormap(
-            cluster_colors[:n_clusters]
-        )
+        cluster_cmap = matplotlib.colors.ListedColormap(cluster_colors[:n_clusters])
 
         # Create 2D masks for easier indexing
         current_image_size = anomaly_mask.shape[0]  # Get image size from anomaly mask
-        valid_pixel_mask_2d = valid_pixel_mask.reshape(
-            (current_image_size, current_image_size))
+        valid_pixel_mask_2d = valid_pixel_mask.reshape((current_image_size, current_image_size))
         anomaly_pixels_indices = np.argwhere(anomaly_mask)  # 2D anomaly indices
         print(f"len(anomaly_pixels_indices): {len(anomaly_pixels_indices)}")
         # Should be same as np.sum(anomaly_mask)
 
         # Map 2D anomaly pixel indices to rows in prepared data
         valid_pixel_indices_2d = np.argwhere(valid_pixel_mask_2d)
-        pixel_index_map = {
-            tuple(index_2d): i for i, index_2d in enumerate(valid_pixel_indices_2d)
-        }
+        pixel_index_map = {tuple(index_2d): i for i, index_2d in enumerate(valid_pixel_indices_2d)}
 
         valid_anomaly_pixel_indices = []
         for anomaly_pixel_index_2d in anomaly_pixels_indices:
             if tuple(anomaly_pixel_index_2d) in pixel_index_map:  # Check valid
                 valid_anomaly_pixel_indices.append(anomaly_pixel_index_2d)
         valid_anomaly_pixel_indices = np.array(valid_anomaly_pixel_indices)
-        print(f"len(valid_anomaly_pixel_indices): "
-              f"{len(valid_anomaly_pixel_indices)}")  # Anomalies after valid check
+        print(f"len(valid_anomaly_pixel_indices): {len(valid_anomaly_pixel_indices)}")  # Anomalies after valid check
         print(f"labels.shape: {labels.shape}")
 
         if len(valid_anomaly_pixel_indices) > 0:
             for cluster_idx in range(n_clusters):
                 # Get indices of pixels belonging to current cluster
-                cluster_pixel_indices = valid_anomaly_pixel_indices[
-                    labels == cluster_idx
-                ]
+                cluster_pixel_indices = valid_anomaly_pixel_indices[labels == cluster_idx]
                 if len(cluster_pixel_indices) > 0:
                     # Assign cluster label to corresponding pixels in 2D mask
-                    cluster_mask[tuple(cluster_pixel_indices.T)] = (
-                        cluster_idx + 1
-                    )  # +1 to avoid 0 (background)
-                    cluster_color = cluster_cmap(
-                        cluster_idx / n_clusters
-                    )  # Get color for cluster
-                    cluster_patches.append(
-                        mpatches.Patch(
-                            color=cluster_color,
-                            label=f'Cluster {cluster_idx + 1}'
-                        )
-                    )
+                    cluster_mask[tuple(cluster_pixel_indices.T)] = cluster_idx + 1  # +1 to avoid 0 (background)
+                    cluster_color = cluster_cmap(cluster_idx / n_clusters)  # Get color for cluster
+                    cluster_patches.append(mpatches.Patch(color=cluster_color, label=f"Cluster {cluster_idx + 1}"))
 
     print("-" * 20)
     return cluster_mask, cluster_cmap, cluster_patches, n_clusters
@@ -292,10 +255,10 @@ def plot_results(
     output_dir: str,
     total_pixels: int,  # Added total_pixels
     anomaly_pixels_count: int,  # Added anomaly_pixels_count
-    cluster_pixels_counts: List[int],  # Added cluster_pixels_counts
-    cluster_anomaly_percentages: List[float],  # Added cluster_anomaly_percentages
+    cluster_pixels_counts: list[int],  # Added cluster_pixels_counts
+    cluster_anomaly_percentages: list[float],  # Added cluster_anomaly_percentages
     # Added clustering_method_name with default "K-Means"
-    clustering_method_name: str = "Gaussian Mixture Model"
+    clustering_method_name: str = "Gaussian Mixture Model",
 ):
     """Plots and saves the results, overlaying global clusters on each channel.
 
@@ -315,81 +278,73 @@ def plot_results(
         clustering_method_name (str): Name of the clustering method used. # Added
     """
     num_rows, num_cols = 3, 3
-    fig, axes = plt.subplots(
-        num_rows, num_cols, figsize=(18, 15), dpi=100
-    )
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(18, 15), dpi=100)
     axes = axes.flatten()
 
-    anomaly_percentage = (anomaly_pixels_count / total_pixels) * \
-        100 if total_pixels > 0 else 0  # Calculate percentage
+    anomaly_percentage = (anomaly_pixels_count / total_pixels) * 100 if total_pixels > 0 else 0  # Calculate percentage
     fig.suptitle(
         # Added clustering method name to title
-        f'Anomaly Detection with {clustering_method_name} Clustering\n'
-        f'Anomaly Threshold: {anomaly_threshold:.2f} | '
-        f'Total Anomalous Pixels: {anomaly_pixels_count} / {total_pixels} '
-        f'({anomaly_percentage:.2f}%)',  # Added anomaly info to title
-        fontsize=18
+        f"Anomaly Detection with {clustering_method_name} Clustering\n"
+        f"Anomaly Threshold: {anomaly_threshold:.2f} | "
+        f"Total Anomalous Pixels: {anomaly_pixels_count} / {total_pixels} "
+        f"({anomaly_percentage:.2f}%)",  # Added anomaly info to title
+        fontsize=18,
     )
 
-    for i, (masked_data, channel) in enumerate(
-        zip(masked_data_list, channel_names)
-    ):
+    for i, (masked_data, channel) in enumerate(zip(masked_data_list, channel_names)):
         if i < num_rows * num_cols:  # Prevent index out of bounds
             ax = axes[i]
 
             # Display the original image with pastel yellow colormap
             ax.imshow(
                 masked_data,
-                origin='lower',
-                cmap='YlOrBr',  # Pastel yellow/orange for the sun
+                origin="lower",
+                cmap="YlOrBr",  # Pastel yellow/orange for the sun
                 vmin=np.nanpercentile(masked_data, 2),
                 vmax=np.nanpercentile(masked_data, 98),
-                alpha=0.5
+                alpha=0.5,
             )
 
             # Overlay the GLOBAL cluster mask (only color cluster areas)
             if n_clusters_global > 0:
                 for cluster_index in range(1, n_clusters_global + 1):
                     cluster_area_mask = cluster_mask_global == cluster_index
-                    cluster_color = cluster_cmap_global(
-                        (cluster_index - 1) / n_clusters_global
-                    )
+                    cluster_color = cluster_cmap_global((cluster_index - 1) / n_clusters_global)
                     ax.imshow(
-                        np.ma.masked_where(
-                            ~cluster_area_mask, cluster_mask_global
-                        ),
-                        origin='lower',
+                        np.ma.masked_where(~cluster_area_mask, cluster_mask_global),
+                        origin="lower",
                         cmap=matplotlib.colors.ListedColormap([cluster_color]),
                         alpha=0.6,
                         vmin=cluster_index - 0.5,
-                        vmax=cluster_index + 0.5
+                        vmax=cluster_index + 0.5,
                     )
 
-            title_text_lines = [f'AIA {channel} Å']  # Start with channel name
-            if cluster_pixels_counts and cluster_anomaly_percentages and cluster_index <= len(
-                    cluster_pixels_counts):
+            title_text_lines = [f"AIA {channel} Å"]  # Start with channel name
+            if cluster_pixels_counts and cluster_anomaly_percentages and cluster_index <= len(cluster_pixels_counts):
                 # Get pixel count for *current* cluster
                 cluster_pixels = cluster_pixels_counts[cluster_index - 1]
                 # Get anomaly percentage for *current* cluster
                 cluster_percentage = cluster_anomaly_percentages[cluster_index - 1]
-                title_text_lines.append(f'Cluster {cluster_index}: {cluster_pixels} Pixels ({
-                                        cluster_percentage:.2f}%)')  # Add line with cluster info
+                title_text_lines.append(
+                    f"Cluster {cluster_index}: {cluster_pixels} Pixels ({cluster_percentage:.2f}%)"
+                )  # Add line with cluster info
 
             ax.set_title(
                 # Join lines with newline for multiline title
                 "\n".join(title_text_lines),
-                color='black',
+                color="black",
                 fontsize=12,  # Slightly smaller fontsize for multiline titles
-                pad=10
+                pad=10,
             )
             ax.text(
-                0.5, -0.18,
-                f'Anomaly Threshold: {anomaly_threshold:.2f}',
-                ha='center',
-                va='center',
+                0.5,
+                -0.18,
+                f"Anomaly Threshold: {anomaly_threshold:.2f}",
+                ha="center",
+                va="center",
                 transform=ax.transAxes,
                 fontsize=12,
-                color='dimgray'
+                color="dimgray",
             )
             ax.set_xticks([])
             ax.set_yticks([])
@@ -398,28 +353,21 @@ def plot_results(
 
             # Add legend (only to the last used subplot)
             if (i == len(channel_names) - 1) and cluster_patches_global:
-                ax.legend(
-                    handles=cluster_patches_global,
-                    loc='upper right',
-                    fontsize='small'
-                )
+                ax.legend(handles=cluster_patches_global, loc="upper right", fontsize="small")
 
     # Remove any unused subplots
     for j in range(len(channel_names), num_rows * num_cols):
         fig.delaxes(axes[j])
 
-    plt.tight_layout(
-        rect=[0, 0, 1, 0.92], w_pad=0.1, h_pad=0.1
-    )
+    plt.tight_layout(rect=[0, 0, 1, 0.92], w_pad=0.1, h_pad=0.1)
     plt.subplots_adjust(wspace=0.1, hspace=0.3)
 
     filename = os.path.join(
         output_dir,
-        f"GMM_kmeans_anomaly_detection_threshold_{
-            anomaly_threshold:.2f}"  # Changed filename to GMM
-        "_global_clusters.png"
+        f"GMM_kmeans_anomaly_detection_threshold_{anomaly_threshold:.2f}"  # Changed filename to GMM
+        "_global_clusters.png",
     )
-    plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(filename, bbox_inches="tight")
     plt.close(fig)
     print(f"Figure saved to: {filename}")
 
@@ -428,85 +376,74 @@ def plot_results(
 def main():
     """Main function to execute SDO/AIA anomaly detection pipeline."""
     parser = argparse.ArgumentParser(
-        description="SDO/AIA Anomaly Detection using Isolation Forest"
-        " and GMM"  # Updated description
+        description="SDO/AIA Anomaly Detection using Isolation Forest and GMM"  # Updated description
     )
     parser.add_argument(
         "--data_dir",
         type=str,
         default="Data/sdo_data",  # Changed default path here
-        help="Path to the directory containing SDO/AIA data."
+        help="Path to the directory containing SDO/AIA data.",
     )
     parser.add_argument(
         "--channels",
         type=str,
-        nargs='+',
+        nargs="+",
         default=None,
-        help="List of AIA channels (e.g., '94' '131'). If None, use all"
-        " except 1600 and 1700."
+        help="List of AIA channels (e.g., '94' '131'). If None, use all except 1600 and 1700.",
     )
     parser.add_argument(
         "--anomaly_thresholds",
         type=float,
-        nargs='+',
+        nargs="+",
         default=[0.1],
-        help="Threshold(s) for anomaly detection. Lower values more sensitive."
+        help="Threshold(s) for anomaly detection. Lower values more sensitive.",
     )
+    parser.add_argument("--output_dir", type=str, default="./output_figures", help="Directory to save output figures.")
     parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="./output_figures",
-        help="Directory to save output figures."
+        "--image_size", type=int, default=512, help="Size to resize images to. Ignored if --no_resize is used."
     )
-    parser.add_argument(
-        "--image_size",
-        type=int,
-        default=512,
-        help="Size to resize images to. Ignored if --no_resize is used."
-    )
-    parser.add_argument(
-        "--contamination",
-        type=float,
-        default=0.05,
-        help="Estimated proportion of anomalies."
-    )
+    parser.add_argument("--contamination", type=float, default=0.05, help="Estimated proportion of anomalies.")
     parser.add_argument(
         "--n_clusters",
         type=int,
         default=7,  # Changed default to 7 clusters
-        help="Number of clusters for K-Means. If None, use Elbow method."
+        help="Number of clusters for K-Means. If None, use Elbow method.",
     )
     parser.add_argument(
-        "--max_k",
-        type=int,
-        default=10,
-        help="Maximum number of clusters to test with Elbow method."
+        "--max_k", type=int, default=10, help="Maximum number of clusters to test with Elbow method."
     )  # Added max_k
-    parser.add_argument(
-        "--random_state",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility"
-    )
-    parser.add_argument(
-        "--no_resize",
-        action='store_true',
-        help="Do not resize images, use original size."
-    )
+    parser.add_argument("--random_state", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--no_resize", action="store_true", help="Do not resize images, use original size.")
 
-    parser = argparse.ArgumentParser(
-        description="SDO/AIA Anomaly Detection using Isolation Forest and GMM Clustering"
+    parser = argparse.ArgumentParser(description="SDO/AIA Anomaly Detection using Isolation Forest and GMM Clustering")
+    parser.add_argument(
+        "--data_dir", type=str, default="Data/sdo_data", help="Path to the directory containing SDO/AIA data."
     )
-    parser.add_argument("--data_dir", type=str, default="Data/sdo_data", help="Path to the directory containing SDO/AIA data.")
-    parser.add_argument("--channels", type=str, nargs='+', default=None, help="List of AIA channels (e.g., '94' '131'). If None, use all except 1600 and 1700.")
-    parser.add_argument("--anomaly_thresholds", type=float, nargs='+', default=[0.1], help="Threshold(s) for anomaly detection. Lower values more sensitive.")
+    parser.add_argument(
+        "--channels",
+        type=str,
+        nargs="+",
+        default=None,
+        help="List of AIA channels (e.g., '94' '131'). If None, use all except 1600 and 1700.",
+    )
+    parser.add_argument(
+        "--anomaly_thresholds",
+        type=float,
+        nargs="+",
+        default=[0.1],
+        help="Threshold(s) for anomaly detection. Lower values more sensitive.",
+    )
     parser.add_argument("--output_dir", type=str, default="./output_figures", help="Directory to save output figures.")
-    parser.add_argument("--image_size", type=int, default=512, help="Size to resize images to. Ignored if --no_resize is used.")
+    parser.add_argument(
+        "--image_size", type=int, default=512, help="Size to resize images to. Ignored if --no_resize is used."
+    )
     parser.add_argument("--contamination", type=float, default=0.05, help="Estimated proportion of anomalies.")
-    parser.add_argument("--n_clusters", type=int, default=7, help="Number of clusters for K-Means. If None, use Elbow method.")
+    parser.add_argument(
+        "--n_clusters", type=int, default=7, help="Number of clusters for K-Means. If None, use Elbow method."
+    )
     parser.add_argument("--max_k", type=int, default=10, help="Maximum number of clusters to test with Elbow method.")
     parser.add_argument("--random_state", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument("--no_resize", action='store_true', help="Do not resize images, use original size.")
+    parser.add_argument("--no_resize", action="store_true", help="Do not resize images, use original size.")
 
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
@@ -521,7 +458,8 @@ def main():
     else:
         all_dirs = os.listdir(args.data_dir)
         channels = [
-            d for d in all_dirs
+            d
+            for d in all_dirs
             if os.path.isdir(os.path.join(args.data_dir, d))
             and not d.startswith("aia_1600")
             and not d.startswith("aia_1700")
@@ -548,7 +486,9 @@ def main():
             data, metadata = load_fits_data(channel_path)
             mask = create_circular_mask(data, metadata)
             masked_data = preprocess_image(
-                data, mask, image_size_for_processing  # Pass size, can be None
+                data,
+                mask,
+                image_size_for_processing,  # Pass size, can be None
             )
             masked_data_list.append(masked_data)
             if args.no_resize:
@@ -562,20 +502,17 @@ def main():
         return
 
     # --- 3. Prepare Data for Anomaly Detection ---
-    prepared_data, valid_pixel_mask, nan_mask = (
-        prepare_data_concatenated(masked_data_list)
-    )
+    prepared_data, valid_pixel_mask, nan_mask = prepare_data_concatenated(masked_data_list)
 
     # --- 4. Anomaly Detection (One-time calculation) ---
-    anomaly_scores = detect_anomalies_isolation_forest(
-        prepared_data, args.contamination, args.random_state
-    )
+    anomaly_scores = detect_anomalies_isolation_forest(prepared_data, args.contamination, args.random_state)
 
     # Create a 2D anomaly map (for visualization)
     # Use current_image_size
     anomaly_map_2d = np.full((current_image_size, current_image_size), np.nan)
     valid_pixel_mask_2d_reshaped = valid_pixel_mask.reshape(
-        (current_image_size, current_image_size))  # Use current_image_size
+        (current_image_size, current_image_size)
+    )  # Use current_image_size
     anomaly_map_2d[valid_pixel_mask_2d_reshaped] = anomaly_scores
 
     # --- 5. Loop Through Anomaly Thresholds ---
@@ -592,23 +529,16 @@ def main():
         anomaly_pixels_indices = np.argwhere(anomaly_mask_global)
 
         # Map anomaly pixel indices to rows in prepared data (critical step)
-        valid_pixel_mask_2d = ~nan_mask.reshape(
-            (current_image_size, current_image_size))  # Use current_image_size
+        valid_pixel_mask_2d = ~nan_mask.reshape((current_image_size, current_image_size))  # Use current_image_size
         valid_pixel_indices_2d = np.argwhere(valid_pixel_mask_2d)
-        pixel_index_map = {
-            tuple(index_2d): i for i, index_2d in enumerate(valid_pixel_indices_2d)
-        }
+        pixel_index_map = {tuple(index_2d): i for i, index_2d in enumerate(valid_pixel_indices_2d)}
 
         anomaly_intensity_features = []
         valid_anomaly_pixel_indices = []
         for anomaly_pixel_index_2d in anomaly_pixels_indices:
             if tuple(anomaly_pixel_index_2d) in pixel_index_map:  # Ensure valid
-                prepared_data_row_index = pixel_index_map[
-                    tuple(anomaly_pixel_index_2d)
-                ]
-                anomaly_intensity_features.append(
-                    prepared_data[prepared_data_row_index]
-                )
+                prepared_data_row_index = pixel_index_map[tuple(anomaly_pixel_index_2d)]
+                anomaly_intensity_features.append(prepared_data[prepared_data_row_index])
                 valid_anomaly_pixel_indices.append(anomaly_pixel_index_2d)
         anomaly_intensity_features = np.array(anomaly_intensity_features)
         valid_anomaly_pixel_indices = np.array(valid_anomaly_pixel_indices)
@@ -617,45 +547,37 @@ def main():
         cluster_anomaly_percentages = []
 
         if len(anomaly_intensity_features) > 0:  # Proceed if valid anomalies
-
             n_clusters_to_use = args.n_clusters  # Use n_clusters (default 7)
             print(f"Using user-specified n_clusters = {n_clusters_to_use}")
 
             # Perform GMM
-            cluster_labels, _ = perform_gmm_clustering(
-                anomaly_intensity_features,
-                n_clusters_to_use,
-                args.random_state
-            )
+            cluster_labels, _ = perform_gmm_clustering(anomaly_intensity_features, n_clusters_to_use, args.random_state)
 
             # Create cluster mask, colormap, and legend patches
-            cluster_mask_global, cluster_cmap_global, cluster_patches_global, \
-                n_clusters_global = create_cluster_mask(
-                    anomaly_mask_global,
-                    cluster_labels,
-                    valid_pixel_mask,
-                    current_image_size  # Pass current image size
-                )
+            cluster_mask_global, cluster_cmap_global, cluster_patches_global, n_clusters_global = create_cluster_mask(
+                anomaly_mask_global,
+                cluster_labels,
+                valid_pixel_mask,
+                current_image_size,  # Pass current image size
+            )
 
             # Calculate cluster pixel counts and anomaly percentages
             for cluster_index in range(n_clusters_global):
-                cluster_pixel_count = np.sum(cluster_mask_global == (
-                    cluster_index + 1))  # Count pixels in cluster
-                cluster_pixels_counts.append(
-                    cluster_pixel_count)  # Append count to list
+                cluster_pixel_count = np.sum(cluster_mask_global == (cluster_index + 1))  # Count pixels in cluster
+                cluster_pixels_counts.append(cluster_pixel_count)  # Append count to list
                 cluster_percentage = (
-                    cluster_pixel_count / anomaly_pixels_count) * 100 if anomaly_pixels_count > 0 else 0
-                cluster_anomaly_percentages.append(
-                    cluster_percentage)  # Append percentage to list
-                print(f"  Cluster {cluster_index + 1}: {cluster_pixel_count} pixels"
-                      # Report cluster pixel count and percentage
-                      f" ({cluster_percentage:.2f}%) of total anomalies")
+                    (cluster_pixel_count / anomaly_pixels_count) * 100 if anomaly_pixels_count > 0 else 0
+                )
+                cluster_anomaly_percentages.append(cluster_percentage)  # Append percentage to list
+                print(
+                    f"  Cluster {cluster_index + 1}: {cluster_pixel_count} pixels"
+                    # Report cluster pixel count and percentage
+                    f" ({cluster_percentage:.2f}%) of total anomalies"
+                )
 
         else:  # Handle case where no anomalies are detected
             print(f"No anomalies found for threshold {anomaly_threshold}.")
-            cluster_mask_global = np.zeros_like(
-                anomaly_mask_global, dtype=int
-            )
+            cluster_mask_global = np.zeros_like(anomaly_mask_global, dtype=int)
             cluster_cmap_global = matplotlib.colors.ListedColormap([])
             cluster_patches_global = []
             n_clusters_global = 0
@@ -675,7 +597,7 @@ def main():
             cluster_pixels_counts,  # Pass cluster pixel counts
             cluster_anomaly_percentages,  # Pass cluster anomaly percentages
             # Added clustering_method_name for plot title
-            clustering_method_name="Gaussian Mixture Model"
+            clustering_method_name="Gaussian Mixture Model",
         )
 
 
