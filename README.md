@@ -5,10 +5,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=uv&logoColor=white" alt="uv">
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/scikit--learn-1.3+-F7931E?logo=scikit-learn&logoColor=white" alt="scikit-learn">
-  <img src="https://img.shields.io/badge/SunPy-6.1-E37933?logo=python&logoColor=white" alt="SunPy">
+  <img src="https://img.shields.io/badge/scikit--learn-1.4+-F7931E?logo=scikit-learn&logoColor=white" alt="scikit-learn">
+  <img src="https://img.shields.io/badge/SunPy-6.0+-E37933?logo=python&logoColor=white" alt="SunPy">
+  <img src="https://img.shields.io/badge/Ruff-linter-D7FF64?logo=ruff&logoColor=black" alt="Ruff">
   <img src="https://img.shields.io/badge/DVC-data%20versioning-945DD6?logo=dvc&logoColor=white" alt="DVC">
   <img src="https://img.shields.io/badge/license-Academic%20Free%20%7C%20Commercial-orange" alt="License">
 </p>
@@ -26,6 +28,7 @@
 - [API Reference](#-api-reference)
 - [Data & Reproducibility](#-data--reproducibility)
 - [Technology Stack](#-technology-stack)
+- [Troubleshooting](#-troubleshooting)
 - [License](#-license)
 - [Authors & Contributors](#-authors--contributors)
 - [Changelog](#changelog)
@@ -174,7 +177,7 @@ sequenceDiagram
 SOLAR/
 ├── API/                            # FastAPI REST service
 │   ├── Dockerfile                  #   Container build config
-│   ├── requirements.txt            #   API-specific dependencies
+│   ├── requirements.txt            #   API-specific pinned dependencies
 │   └── app/
 │       ├── main.py                 #   FastAPI application entry point (v0.1.3)
 │       ├── api/
@@ -214,10 +217,9 @@ SOLAR/
 │   └── unit_tests/                 #   Unit tests for solar & utils modules
 ├── datos/                          # Sample data (FITS & JP2)
 ├── config/                         # DVC & project configuration
-├── ci/                             # CI/CD scripts & requirements
-├── setup.py                        # Package installation config
-├── requirements.txt                # Project-wide dependencies
-├── pytest.ini                      # Test configuration
+├── .github/workflows/main.yml      # GitHub Actions CI pipeline
+├── pyproject.toml                  # Project config, dependencies, and tool settings
+├── Makefile                        # Development workflow commands
 ├── cloudbuild.yaml                 # Google Cloud Build pipeline
 ├── sdo_data.dvc                    # DVC tracking file for SDO data
 ├── CHANGELOG.md                    # Release history
@@ -230,10 +232,20 @@ SOLAR/
 
 ### Prerequisites
 
-- **Python 3.10+**
-- **pip** (package manager)
+- **Python 3.12+**
+- **[uv](https://docs.astral.sh/uv/)** (modern Python package manager)
 - **Git** and optionally **DVC** (for data versioning)
 - Google Cloud credentials (only required for GCS-backed DVC remote or API deployment)
+
+### Install uv
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or with Homebrew
+brew install uv
+```
 
 ### Installation
 
@@ -244,35 +256,36 @@ SOLAR/
    cd SOLAR
    ```
 
-2. **Create and activate a virtual environment:**
+2. **Install core dependencies** (uv creates the virtualenv automatically):
 
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
+   uv sync
    ```
 
-3. **Install core dependencies:**
+3. **Install with development tools** (Ruff, mypy, pytest):
 
    ```bash
-   pip install -r requirements.txt
+   make install-dev
+   # or: uv sync --extra dev
    ```
 
-4. **Install the package in editable mode** (recommended for development):
+4. **Install with API dependencies:**
 
    ```bash
-   pip install -e .
+   uv sync --extra api
    ```
 
-5. **(Optional) Install API dependencies:**
+5. **Install everything:**
 
    ```bash
-   pip install -r API/requirements.txt
+   make install-all
+   # or: uv sync --all-extras
    ```
 
 6. **(Optional) Pull versioned data with DVC:**
 
    ```bash
-   dvc pull
+   uv run dvc pull
    ```
 
 ---
@@ -284,7 +297,7 @@ SOLAR/
 The `SolarAnomalyPipeline` can be executed via the CLI script:
 
 ```bash
-python src/solar/run_kmeans_pipeline.py \
+uv run python src/solar/run_kmeans_pipeline.py \
   --data_dir ./datos/muestras_FITS/20250522_180000 \
   --channels 94 131 171 193 211 304 335 \
   --output_dir ./output_results \
@@ -292,6 +305,9 @@ python src/solar/run_kmeans_pipeline.py \
   --n_clusters 7 \
   --image_size 512 \
   --cluster_method KMeans
+
+# Or using Make:
+make run-pipeline ARGS="--data_dir ./datos/muestras_FITS/20250522_180000 --channels 94 131 171"
 ```
 
 #### CLI Arguments
@@ -330,8 +346,8 @@ results = pipeline.run()
 ### Starting the API Server
 
 ```bash
-cd API
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+make run-api
+# or: cd API && uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 Interactive documentation is available at `http://localhost:8080/docs` (Swagger UI).
@@ -370,21 +386,107 @@ docker run -p 8080:8080 solar-api
 
 | Category | Technologies |
 |---|---|
-| **Core Language** | Python 3.10+ |
+| **Core Language** | Python 3.12+ |
+| **Package Manager** | [uv](https://docs.astral.sh/uv/) |
 | **ML / Anomaly Detection** | scikit-learn (IsolationForest, KMeans, MiniBatchKMeans) |
-| **Solar Data** | SunPy 6.1, Astropy 6.1, Glymur (JP2), JSOC/Fido |
+| **Solar Data** | SunPy 6.0+, Astropy 6.0+, Glymur (JP2), JSOC/Fido |
 | **Image Processing** | NumPy, SciPy, scikit-image, Pillow |
 | **Visualization** | Matplotlib |
 | **API Framework** | FastAPI 0.115, Uvicorn, Pydantic |
 | **Scheduled Processing** | Flask, APScheduler |
+| **Linting & Formatting** | [Ruff](https://docs.astral.sh/ruff/) (replaces flake8, pylint, isort, autopep8) |
+| **Type Checking** | mypy |
 | **Data Versioning** | DVC with Google Cloud Storage remote |
 | **Cloud / Deployment** | Docker, Google Cloud Build, Google Cloud Run |
-| **CI/CD** | GitHub Actions, pre-commit hooks |
-| **Testing** | pytest |
+| **CI/CD** | GitHub Actions |
+| **Testing** | pytest, pytest-cov |
 
 ---
 
-## 📄 License
+## � Troubleshooting
+
+**Issue:** Slow API responses
+- **Solution:**
+  - Check if the pipeline is properly cached
+  - Verify FITS data is loaded correctly
+  - Monitor system resources (CPU, memory)
+  - Check logs for errors: `make logs`
+
+**Issue:** Job not found (404)
+- **Solution:**
+  - Jobs may expire after processing completes
+  - Verify job ID is correct UUID format
+  - Check if the job was created successfully
+  - Use status endpoint: `GET /job-status/{job_id}`
+
+**Issue:** Docker build fails
+- **Solution:**
+  - Clear Docker cache: `docker system prune -a`
+  - Verify Dockerfile syntax
+  - Check network connectivity for package downloads
+  - Use `docker build --no-cache` for clean build
+
+**Issue:** mypy type errors
+- **Solution:**
+  ```bash
+  # Check specific file
+  uv run mypy src/specific/file.py
+  # Update type stubs
+  uv pip install types-all
+  # See mypy config
+  cat pyproject.toml | grep -A 20 "\[tool.mypy\]"
+  ```
+
+**Issue:** Ruff linting errors
+- **Solution:**
+  ```bash
+  # Auto-fix all fixable issues
+  make format
+  # Check without fixing
+  make lint
+  # Check specific file
+  uv run ruff check src/solar/pipeline.py
+  ```
+
+### Debugging Tips
+
+1. **Enable Debug Logging**: Set `LOG_LEVEL=DEBUG` in your environment
+2. **Check Logs**: Monitor application logs for errors
+3. **Use Interactive Docs**: Test API at `http://localhost:8080/docs`
+4. **Run Tests in Verbose**: `uv run pytest -vv --tb=long`
+5. **Check Dependencies**: `uv pip list` to verify installed packages
+
+### Performance Optimization
+
+- **Increase Workers**: For production, use multiple Uvicorn workers
+  ```bash
+  uvicorn app.main:app --workers 4 --host 0.0.0.0 --port 8080
+  ```
+- **Image Size**: Use `--image_size 512` (default) for faster processing; increase for higher resolution
+- **MiniBatchKMeans**: Use `--cluster_method MiniBatchKMeans` for large datasets
+- **Contamination Threshold**: Adjust `--anomaly_thresholds` to control anomaly sensitivity
+
+### Available Make Commands
+
+```bash
+make help          # Show all available commands
+make install       # Install core dependencies
+make install-dev   # Install with dev tools
+make install-all   # Install all dependency groups
+make lint          # Run Ruff linter
+make format        # Auto-fix formatting and lint issues
+make type-check    # Run mypy
+make check         # Run all code quality checks
+make test          # Run tests
+make test-cov      # Run tests with coverage
+make run-api       # Start FastAPI server
+make run-pipeline  # Run ML pipeline
+make clean         # Remove caches and build artifacts
+```
+
+---
+
+## �📄 License
 
 This project is distributed under a **dual license** model:
 

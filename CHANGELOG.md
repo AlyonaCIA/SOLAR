@@ -26,6 +26,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated CHANGELOG to English; converted meeting notes to English summaries.
 - Improved documentation organization for clearer onboarding.
 
+## [0.2.0] - 2026-03
+
+### Added
+
+- `pyproject.toml` as the single source of truth for project metadata, dependencies, and tool configuration.
+- [uv](https://docs.astral.sh/uv/) as the project package manager (replaces pip + venv).
+- [Ruff](https://docs.astral.sh/ruff/) for unified linting and formatting (replaces flake8, pylint, isort, autopep8, docformatter, autoflake).
+- mypy for static type checking (configured in `pyproject.toml`).
+- `Makefile` with development workflow commands (`install`, `lint`, `format`, `test`, `run-api`, etc.).
+- Troubleshooting, Debugging Tips, and Performance Optimization sections in README.
+- Make commands reference table in README.
+
+### Changed
+
+- Upgraded minimum Python version from 3.10 to 3.12.
+- Modernized GitHub Actions CI workflow: uses `astral-sh/setup-uv@v4`, upgraded to `actions/checkout@v4`, 3 focused jobs (lint, type-check, test).
+- Updated README badges, Getting Started, and Tech Stack to reflect uv/Ruff toolchain.
+- Consolidated all tool configuration into `pyproject.toml` (pytest, ruff, mypy).
+
+### Removed
+
+- `setup.py` — replaced by `pyproject.toml` with hatchling build backend.
+- `requirements.txt` — replaced by `[project.dependencies]` in `pyproject.toml`.
+- `pytest.ini` — migrated to `[tool.pytest.ini_options]` in `pyproject.toml`.
+- `.pre-commit-config.yaml` — pre-commit hooks removed; Ruff handles all checks.
+- `.flake8` — replaced by `[tool.ruff]` configuration.
+- `.pylintrc` — replaced by `[tool.ruff]` configuration.
+- `ci/` folder — shell scripts replaced by Makefile targets and direct Ruff/uv commands.
+
 ## [0.1.3] - 2025-05
 
 ### Added
