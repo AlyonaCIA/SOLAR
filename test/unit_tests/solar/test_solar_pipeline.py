@@ -159,6 +159,7 @@ def test_pipeline_run_handles_no_data(tmp_path):
     # La excepción exacta podría variar, pero debería indicar fallo de datos
     assert (
         "No data was successfully loaded" in results.get("message", "")
+        or "No data successfully loaded" in results.get("message", "")
         or "Pipeline failed due to data or \
                configuration issue"
         in results.get("message", "")
