@@ -497,16 +497,23 @@ This project is distributed under a **dual license** model:
 
 See [LICENSE](LICENSE) for full terms.
 
-For commercial licensing inquiries, please contact the project owner through the official repository channels.
+**Questions?** Contact: alenacivanovaa@gmail.com
 
 ---
 
-## 👥 Authors & Contributors
+## Author
 
-### Principal Investigator
+<div align="center">
 
-**Alyona Carolina Ivanova Araujo**
-MSc in Artificial Intelligence and Astrophysics
+### Alyona Carolina Ivanova Araujo
+
+**MSc in Artificial Intelligence & Astrophysics | Principal Investigator**
+
+**Email:** alenacivanovaa@gmail.com
+**GitHub:** [@AlyonaCIA](https://github.com/AlyonaCIA)
+**Version:** 0.2.0
+
+---
 
 ### Supervisor
 
@@ -519,12 +526,51 @@ Postdoktor — Rosseland Centre for Solar Physics, University of Oslo
 **Juan Camilo Guevara Gomez**
 [juancamilo.guevaragomez@gmail.com](mailto:juancamilo.guevaragomez@gmail.com)
 
+---
+
+### Project Stats
+
+![Python Version](https://img.shields.io/badge/Python-3.12%20|%203.13-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
+![scikit--learn](https://img.shields.io/badge/scikit--learn-1.4+-F7931E)
+![License](https://img.shields.io/badge/License-Academic%20Free%20|%20Commercial-orange)
+
+</div>
+
+---
+
+## Acknowledgments
+
+This project was built with:
+- Modern Python development practices and tooling
+- Unsupervised machine learning for scientific discovery
+- Comprehensive CI/CD pipeline with GitHub Actions
+- Enterprise-grade code quality standards (Ruff, mypy)
+- Community-driven open source values
+
+Special thanks to:
+- **SunPy Community** for the solar data analysis framework
+- **scikit-learn Team** for powerful ML tools
+- **FastAPI Community** for the excellent web framework
+- **uv Team** for revolutionizing Python package management
+- Open source contributors and maintainers
+
 ### Contributing Engineers (AI / ML)
 
 - Andres Forero
 - Santiago Calderón López
 - Camilo Matson Hernandez
 - Andres Vega
+
+---
+
+<div align="center">
+
+**If you find this project useful, please consider giving it a ⭐ star!**
+
+Made with precision and care by Alyona Carolina Ivanova Araujo
+
+</div>
 
 ---
 
