@@ -12,8 +12,8 @@ from sunpy.net import Fido
 from sunpy.net import attrs as a
 
 # Define the date range for data retrieval
-start_date = '2020-09-01T00:00:00'
-end_date = '2020-09-01T01:00:00'
+start_date = "2020-09-01T00:00:00"
+end_date = "2020-09-01T01:00:00"
 
 # Define the wavelength channels of interest (in Ångstroms)
 wavelengths = [
@@ -27,11 +27,10 @@ wavelengths = [
     1600 * u.angstrom,
     1700 * u.angstrom,
     4500 * u.angstrom,
-
 ]
 
 # Directory to save downloaded data
-download_dir = 'Data/multichannel_SDO_AIA/'
+download_dir = "Data/multichannel_SDO_AIA/"
 
 
 def ensure_directory_exists(directory: str):
@@ -40,10 +39,7 @@ def ensure_directory_exists(directory: str):
         os.makedirs(directory)
 
 
-def download_and_plot_sdo_data(start_time: str,
-                               end_time: str,
-                               wavelengths: list,
-                               download_dir: str):
+def download_and_plot_sdo_data(start_time: str, end_time: str, wavelengths: list, download_dir: str):
     """Downloads solar data from SDO for multiple wavelengths using SunPy and plots the
     retrieved data.
 
@@ -59,23 +55,18 @@ def download_and_plot_sdo_data(start_time: str,
     for wavelength in wavelengths:
         try:
             # Perform the data search for the current wavelength
-            print(
-                f"Searching for data from {start_time} to {end_time} at {wavelength}.")
-            query = Fido.search(
-                a.Time(start_time, end_time),
-                a.Instrument('AIA'),
-                a.Wavelength(wavelength)
-            )
+            print(f"Searching for data from {start_time} to {end_time} at {wavelength}.")
+            query = Fido.search(a.Time(start_time, end_time), a.Instrument("AIA"), a.Wavelength(wavelength))
 
             # Download the data
             print(f"Downloading data for wavelength {wavelength}...")
-            files = Fido.fetch(query, path=os.path.join(
-                download_dir, f'{wavelength.value}Å/{{file}}'))
+            files = Fido.fetch(query, path=os.path.join(download_dir, f"{wavelength.value}Å/{{file}}"))
 
             if not files:
                 print(
                     f"No files downloaded for wavelength {wavelength}.\
-                        Please check the query parameters.")
+                        Please check the query parameters."
+                )
                 continue
 
             # Process and plot the downloaded data

@@ -1,6 +1,6 @@
+from app.api.routes import router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import router
 
 # Create FastAPI app
 app = FastAPI(
@@ -21,10 +21,13 @@ app.add_middleware(
 # Include router only once (was included twice before)
 app.include_router(router)
 
+
 @app.get("/")
 async def root():
     return {"message": "Solar Analysis API is running. Go to /docs for the API documentation."}
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8080, timeout_keep_alive=600)

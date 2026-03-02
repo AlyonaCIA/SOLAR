@@ -1,4 +1,5 @@
 """Module to Display Data."""
+
 import os
 
 import matplotlib.pyplot as plt
@@ -8,8 +9,7 @@ import sunpy.map
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # path for our file to vizualice.
-fits_file_path = os.path.join(
-    script_dir, 'aia.lev1_euv_12s.2017-09-10T142959Z.171.image.fits')
+fits_file_path = os.path.join(script_dir, "aia.lev1_euv_12s.2017-09-10T142959Z.171.image.fits")
 
 # check ig this file exits
 if os.path.exists(fits_file_path):
