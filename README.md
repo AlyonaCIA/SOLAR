@@ -1,97 +1,287 @@
-# SOLAR
+<p align="center">
+  <h1 align="center">SOLAR</h1>
+  <p align="center"><strong>Solar Observer Learning Anomaly Recognition</strong></p>
+  <p align="center">Unsupervised anomaly detection in multi-channel SDO/AIA solar imagery</p>
+</p>
 
-**Solar Observer Learning Anomaly Recognition**
-
-![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-API-009688.svg)
-![DVC](https://img.shields.io/badge/data-DVC-purple.svg)
-![License](https://img.shields.io/badge/license-Academic%20Free%20%7C%20Commercial-orange.svg)
-
-Proyecto para detección no supervisada de anomalías en imágenes multicanal de **SDO/AIA**, con pipeline científico en `src/`, API en `API/` y procesamiento programado en `scheduled_processing/`.
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/scikit--learn-1.3+-F7931E?logo=scikit-learn&logoColor=white" alt="scikit-learn">
+  <img src="https://img.shields.io/badge/SunPy-6.1-E37933?logo=python&logoColor=white" alt="SunPy">
+  <img src="https://img.shields.io/badge/DVC-data%20versioning-945DD6?logo=dvc&logoColor=white" alt="DVC">
+  <img src="https://img.shields.io/badge/license-Academic%20Free%20%7C%20Commercial-orange" alt="License">
+</p>
 
 ---
 
-## 🎯 Objetivo
+## Table of Contents
 
-SOLAR busca identificar patrones atípicos en datos solares sin etiquetas previas, apoyando exploración científica y priorización de eventos para análisis experto.
+- [Overview](#overview)
+- [Key Features](#-key-features)
+- [Architecture](#-architecture)
+- [Project Structure](#-project-structure)
+- [Getting Started](#-getting-started)
+- [Usage](#-usage)
+- [API Reference](#-api-reference)
+- [Data & Reproducibility](#-data--reproducibility)
+- [Technology Stack](#-technology-stack)
+- [License](#-license)
+- [Authors & Contributors](#-authors--contributors)
+- [Changelog](#changelog)
 
-## 🔍 Qué hace el repositorio
+---
 
-- Descarga y prepara datos SDO/AIA (FITS/JP2) para análisis reproducible.
-- Ejecuta detección de anomalías con `IsolationForest`.
-- Caracteriza anomalías con clustering (`KMeans`, `MiniBatchKMeans`, `GMM`).
-- Expone endpoints en FastAPI para flujos operativos y ejecución en background.
-- Soporta versionado de datos con DVC.
+## Overview
 
-## 🧱 Arquitectura
+**SOLAR** (Solar Observer Learning Anomaly Recognition) is a research-driven framework for detecting and characterizing atypical events in solar imagery captured by the **Atmospheric Imaging Assembly (AIA)** aboard NASA's **Solar Dynamics Observatory (SDO)**.
+
+The project applies unsupervised machine learning techniques — primarily **Isolation Forest** for anomaly detection and **KMeans / MiniBatchKMeans** for anomaly characterization — to multi-channel extreme ultraviolet (EUV) observations. By analyzing multiple wavelength channels simultaneously (94 Å, 131 Å, 171 Å, 193 Å, 211 Å, 304 Å, 335 Å, and more), SOLAR identifies spatial regions exhibiting unusual spectral signatures that may correspond to scientifically interesting phenomena such as flares, coronal mass ejections, or other transient events.
+
+The system is designed to support solar physics research by:
+
+- **Prioritizing regions of interest** without requiring manually labeled training data.
+- **Providing interpretable clustering** of detected anomalies for downstream expert analysis.
+- **Operating at scale** via a REST API and automated scheduled processing pipeline deployed on Google Cloud Platform.
+
+---
+
+## 🔑 Key Features
+
+- **Multi-channel anomaly detection** — Processes 7+ SDO/AIA EUV channels simultaneously using Isolation Forest to flag spatially anomalous regions on the solar disk.
+- **Anomaly clustering & characterization** — Groups detected anomalies into distinct clusters (KMeans, MiniBatchKMeans) to differentiate between types of atypical events.
+- **End-to-end scientific pipeline** — From FITS/JP2 data ingestion and solar-disk masking through preprocessing, anomaly scoring, clustering, and result visualization.
+- **REST API service** — FastAPI-based service (v0.1.3) providing endpoints for SDO data retrieval via JSOC/Helioviewer, analysis execution, and background job management.
+- **Scheduled batch processing** — Automated daily processing of the latest SDO observations via a Flask-based scheduler deployed on Google Cloud Run.
+- **Data versioning** — Full reproducibility through DVC with Google Cloud Storage as a remote backend.
+- **Cloud-native deployment** — Dockerized services with Cloud Build CI/CD pipelines.
+
+---
+
+## 🏗 Architecture
+
+### High-Level System Overview
 
 ```mermaid
-graph LR
-    A[SDO/JSOC y datos locales] --> B[src/data_prep]
-    B --> C[src/solar/pipeline.py]
-    C --> D[src/solar/run_kmeans_pipeline.py]
-    C --> E[Resultados/figuras]
+graph TB
+    subgraph External["☀️ External Data Sources"]
+        SDO["SDO/JSOC<br/>FITS Data"]
+        HV["Helioviewer API<br/>JP2 Images"]
+    end
 
-    F[API/app/api/routes.py] --> G[API/app/api/pipeline/executor.py]
-    G --> C
-    F --> H[API/app/api/pipeline/job_manager.py]
-    H --> I[Procesos en background]
+    subgraph SOLAR["SOLAR Framework"]
+        subgraph DataPrep["Data Preparation"]
+            DL["download_sdo_data.py<br/>Data Acquisition"]
+            VF["visualizar_fits.py<br/>FITS Visualization"]
+        end
 
-    J[scheduled_processing/main.py] --> C
-    K[DVC + GCS remoto] --> B
-    K --> C
+        subgraph Core["Core ML Pipeline"]
+            PP["SolarAnomalyPipeline<br/>(pipeline.py)"]
+            IF["Isolation Forest<br/>Anomaly Detection"]
+            KM["KMeans / MiniBatchKMeans<br/>Clustering"]
+            VIZ["Result Visualization<br/>& Cluster Maps"]
+        end
+
+        subgraph APIService["FastAPI Service (v0.1.3)"]
+            RT["routes.py<br/>API Endpoints"]
+            EX["executor.py<br/>Pipeline Execution"]
+            JM["job_manager.py<br/>Background Jobs"]
+            BG["background_job.py<br/>Async Processing"]
+        end
+
+        subgraph Scheduler["Scheduled Processing"]
+            SP["main.py (Flask)<br/>Daily Cron Trigger"]
+        end
+
+        subgraph Utils["Utilities"]
+            UU["utils.py<br/>FITS I/O, Masking,<br/>Preprocessing"]
+            PL["plotting.py<br/>Visualization Helpers"]
+        end
+    end
+
+    subgraph Storage["☁️ Cloud Storage"]
+        GCS["Google Cloud Storage<br/>DVC Remote + Results"]
+    end
+
+    SDO --> DL
+    HV --> RT
+    DL --> PP
+    PP --> IF
+    IF --> KM
+    KM --> VIZ
+    PP --> UU
+    RT --> EX
+    EX --> PP
+    RT --> JM
+    JM --> BG
+    SP -->|"POST /start-fits-analysis"| RT
+    VIZ --> GCS
+    BG --> GCS
+    DVC["DVC"] --> GCS
 ```
 
-## Estructura principal
+### ML Pipeline Flow
+
+```mermaid
+flowchart LR
+    A["FITS Files<br/>(per channel)"] --> B["Load & Parse<br/>sunpy.map.Map"]
+    B --> C["Solar Disk Masking<br/>Circular Mask from Header"]
+    C --> D["Preprocessing<br/>Resize · Normalize<br/>RobustScaler"]
+    D --> E["Multi-Channel<br/>Feature Concatenation"]
+    E --> F["Isolation Forest<br/>Anomaly Scoring"]
+    F --> G["Threshold Filtering<br/>Anomaly Mask"]
+    G --> H["KMeans / MiniBatch<br/>Clustering"]
+    H --> I["2D Cluster Map<br/>Visualization"]
+
+    style A fill:#e1f5fe
+    style F fill:#fff3e0
+    style H fill:#f3e5f5
+    style I fill:#e8f5e9
+```
+
+### API Request Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as FastAPI (routes.py)
+    participant JM as JobManager
+    participant EX as Executor
+    participant JSOC as SDO/JSOC
+    participant GCS as Cloud Storage
+
+    C->>API: POST /start-fits-analysis
+    API->>JM: Create background job
+    JM-->>C: 202 Accepted {job_id}
+
+    JM->>EX: Run pipeline (async)
+    EX->>JSOC: Query FITS data
+    JSOC-->>EX: FITS files
+    EX->>EX: Preprocess → IsolationForest → KMeans
+    EX->>GCS: Upload results
+    EX->>JM: Mark COMPLETED
+
+    C->>API: GET /job-status/{job_id}
+    API->>JM: Check status
+    JM-->>C: 200 {status, results}
+```
+
+---
+
+## 📁 Project Structure
 
 ```text
-API/                    # Servicio FastAPI
-scheduled_processing/   # Procesamiento batch/programado
-src/data_prep/          # Descarga y preparación de datos
-src/solar/              # Pipeline ML principal
-src/utils/              # Utilidades de procesamiento y visualización
-notebooks/              # EDA y experimentación
-datos/                  # Muestras de datos
-test/                   # Pruebas
+SOLAR/
+├── API/                            # FastAPI REST service
+│   ├── Dockerfile                  #   Container build config
+│   ├── requirements.txt            #   API-specific dependencies
+│   └── app/
+│       ├── main.py                 #   FastAPI application entry point (v0.1.3)
+│       ├── api/
+│       │   ├── routes.py           #   Endpoint definitions (JSOC, Helioviewer, analysis)
+│       │   └── pipeline/
+│       │       ├── executor.py     #   Pipeline execution orchestration
+│       │       ├── job_manager.py  #   Background job state tracking
+│       │       ├── background_job.py   Async job runner
+│       │       ├── data_loader.py  #   Data ingestion helpers
+│       │       ├── fits_loader.py  #   FITS file loading
+│       │       ├── preprocess.py   #   Image preprocessing
+│       │       ├── model.py        #   ML model inference
+│       │       └── visualization.py    Result rendering
+│       └── config/
+│           └── settings.py         #   Environment-based configuration
+├── scheduled_processing/           # Automated batch processing
+│   ├── Dockerfile                  #   Container build config
+│   ├── main.py                     #   Flask scheduler (daily cron)
+│   └── requirements.txt            #   Scheduler dependencies
+├── src/                            # Core library
+│   ├── data_prep/                  #   Data acquisition & preparation
+│   │   ├── download_sdo_data.py    #   SDO/JSOC download scripts
+│   │   └── visualizar_fits.py      #   FITS visualization utilities
+│   ├── solar/                      #   ML pipeline
+│   │   ├── pipeline.py             #   SolarAnomalyPipeline class
+│   │   ├── run_kmeans_pipeline.py  #   CLI entrypoint for pipeline execution
+│   │   └── kmeans/                 #   KMeans-specific modules
+│   └── utils/                      #   Shared utilities
+│       ├── utils.py                #   FITS I/O, masking, preprocessing, scaling
+│       └── plotting.py             #   Visualization helpers
+├── notebooks/                      # Exploratory analysis & experiments
+│   ├── eda_sdo_aia/                #   SDO/AIA data exploration
+│   ├── eda_clustering/             #   Clustering analysis (DBSCAN, GMM, KMeans)
+│   ├── model_test/                 #   Model experiments (IsolationForest, LOF, NormFlow)
+│   └── first_clustering_resize/    #   Initial clustering experiments
+├── test/                           # Test suite
+│   └── unit_tests/                 #   Unit tests for solar & utils modules
+├── datos/                          # Sample data (FITS & JP2)
+├── config/                         # DVC & project configuration
+├── ci/                             # CI/CD scripts & requirements
+├── setup.py                        # Package installation config
+├── requirements.txt                # Project-wide dependencies
+├── pytest.ini                      # Test configuration
+├── cloudbuild.yaml                 # Google Cloud Build pipeline
+├── sdo_data.dvc                    # DVC tracking file for SDO data
+├── CHANGELOG.md                    # Release history
+└── LICENSE                         # Dual license (Academic Free / Commercial)
 ```
 
-## Quick Start
+---
 
-1. Clona el repositorio:
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Python 3.10+**
+- **pip** (package manager)
+- **Git** and optionally **DVC** (for data versioning)
+- Google Cloud credentials (only required for GCS-backed DVC remote or API deployment)
+
+### Installation
+
+1. **Clone the repository:**
 
    ```bash
    git clone https://github.com/AlyonaCIA/SOLAR.git
    cd SOLAR
    ```
 
-2. Crea y activa entorno virtual:
+2. **Create and activate a virtual environment:**
 
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
    ```
 
-3. Instala dependencias:
+3. **Install core dependencies:**
 
    ```bash
    pip install -r requirements.txt
    ```
 
-4. (Opcional) instala dependencias del API:
+4. **Install the package in editable mode** (recommended for development):
+
+   ```bash
+   pip install -e .
+   ```
+
+5. **(Optional) Install API dependencies:**
 
    ```bash
    pip install -r API/requirements.txt
    ```
 
-5. Si trabajas con DVC + GCS, configura credenciales y ejecuta:
+6. **(Optional) Pull versioned data with DVC:**
 
    ```bash
    dvc pull
    ```
 
-## Ejecución
+---
 
-### Pipeline local
+## 💻 Usage
+
+### Running the Pipeline Locally
+
+The `SolarAnomalyPipeline` can be executed via the CLI script:
 
 ```bash
 python src/solar/run_kmeans_pipeline.py \
@@ -100,39 +290,142 @@ python src/solar/run_kmeans_pipeline.py \
   --output_dir ./output_results \
   --anomaly_thresholds 0.10 \
   --n_clusters 7 \
-  --image_size 512
+  --image_size 512 \
+  --cluster_method KMeans
 ```
 
-### API
+#### CLI Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `--data_dir` | `Data/sdo_data` | Path to SDO/AIA channel subdirectories |
+| `--channels` | `94 131 171 193 211 233 304 335 700` | AIA wavelength channels to process |
+| `--anomaly_thresholds` | `0.1` | Isolation Forest contamination threshold |
+| `--output_dir` | `./output_figures_kmeans` | Directory for output figures & results |
+| `--image_size` | `512` | Resize dimension (square); `-1` for original |
+| `--n_clusters` | `7` | Number of clusters for anomaly grouping |
+| `--cluster_method` | `KMeans` | Clustering algorithm (`KMeans` or `MiniBatchKMeans`) |
+
+### Running the Pipeline Programmatically
+
+```python
+from src.solar.pipeline import SolarAnomalyPipeline
+
+pipeline = SolarAnomalyPipeline(
+    data_dir="./datos/muestras_FITS/20250522_180000",
+    output_dir="./results",
+    channels=["94", "131", "171", "193", "211", "304", "335"],
+    image_size=512,
+    contamination=0.05,
+    n_clusters=7,
+    cluster_method="KMeans",
+)
+results = pipeline.run()
+```
+
+---
+
+## 🌐 API Reference
+
+### Starting the API Server
 
 ```bash
 cd API
 uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-Documentación interactiva: `http://localhost:8080/docs`
+Interactive documentation is available at `http://localhost:8080/docs` (Swagger UI).
 
-## Datos y reproducibilidad
+### Key Endpoints
 
-- Datos versionados con DVC.
-- Configuración de referencia en `config/`.
-- Muestras incluidas en `datos/` y `API/test/testing_input/`.
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Health check and API status |
+| `GET` | `/docs` | Interactive Swagger documentation |
+| `POST` | `/start-fits-analysis` | Start a background FITS analysis job |
+| `GET` | `/job-status/{job_id}` | Check progress of a background job |
+| `POST` | `/query-sdo-data` | Query SDO/JSOC for available data |
+| `POST` | `/fetch-helioviewer` | Download JP2 images from Helioviewer |
 
-## Licencia
+### Docker Deployment
 
-Este proyecto usa un esquema de **licencia dual**:
+```bash
+cd API
+docker build -t solar-api .
+docker run -p 8080:8080 solar-api
+```
 
-- Uso **académico/no comercial**: gratuito.
-- Uso **comercial/empresarial**: requiere licencia comercial.
+---
 
-Consulta los términos completos en `LICENSE`.
+## 📊 Data & Reproducibility
+
+- **Data versioning** — All science data is tracked with [DVC](https://dvc.org/) using Google Cloud Storage as the remote backend (`ml-project-dvc-bucket`).
+- **Sample data** — Small samples are included in `datos/` (FITS and JP2 formats) and `API/test/testing_input/` for development and testing.
+- **Configuration** — Reference configs stored in `config/`. DVC commands documented in `config/dvc_command.txt`.
+- **Reproducibility** — Use `dvc repro` or the CLI script with fixed `--random_state` to reproduce results exactly.
+
+---
+
+## 🛠 Technology Stack
+
+| Category | Technologies |
+|---|---|
+| **Core Language** | Python 3.10+ |
+| **ML / Anomaly Detection** | scikit-learn (IsolationForest, KMeans, MiniBatchKMeans) |
+| **Solar Data** | SunPy 6.1, Astropy 6.1, Glymur (JP2), JSOC/Fido |
+| **Image Processing** | NumPy, SciPy, scikit-image, Pillow |
+| **Visualization** | Matplotlib |
+| **API Framework** | FastAPI 0.115, Uvicorn, Pydantic |
+| **Scheduled Processing** | Flask, APScheduler |
+| **Data Versioning** | DVC with Google Cloud Storage remote |
+| **Cloud / Deployment** | Docker, Google Cloud Build, Google Cloud Run |
+| **CI/CD** | GitHub Actions, pre-commit hooks |
+| **Testing** | pytest |
+
+---
+
+## 📄 License
+
+This project is distributed under a **dual license** model:
+
+| Use Case | License | Cost |
+|---|---|---|
+| Academic, research, educational, non-profit | **Academic & Non-Commercial License** | Free |
+| Commercial, enterprise, revenue-generating | **Commercial License** | Paid (contact author) |
+
+See [LICENSE](LICENSE) for full terms.
+
+For commercial licensing inquiries, please contact the project owner through the official repository channels.
+
+---
+
+## 👥 Authors & Contributors
+
+### Principal Investigator
+
+**Alyona Carolina Ivanova Araujo**
+MSc in Artificial Intelligence and Astrophysics
+
+### Supervisor
+
+**Carlos José Díaz Baso**
+Postdoktor — Rosseland Centre for Solar Physics, University of Oslo
+[carlos.diaz@astro.uio.no](mailto:carlos.diaz@astro.uio.no)
+
+### Co-Supervisor
+
+**Juan Camilo Guevara Gomez**
+[juancamilo.guevaragomez@gmail.com](mailto:juancamilo.guevaragomez@gmail.com)
+
+### Contributing Engineers (AI / ML)
+
+- Andres Forero
+- Santiago Calderón López
+- Camilo Matson Hernandez
+- Andres Vega
+
+---
 
 ## Changelog
 
-Historial de cambios en `CHANGELOG.md`.
-
-## Autor
-
-**Alyona Carolina Ivanova Araujo**
-
-Para temas de colaboración académica o licencia comercial, usar los canales de contacto del proyecto.
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
