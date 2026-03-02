@@ -1,0 +1,13 @@
+name: 'SOLAR — Format Check'
+description: 'Validate code formatting with Ruff for SOLAR'
+
+runs:
+  using: composite
+  steps:
+    - name: Check import sorting
+      run: uv run ruff check --select I --diff src/ API/app/ test/
+      shell: bash
+
+    - name: Check code formatting
+      run: uv run ruff format --check src/ API/app/ test/
+      shell: bash

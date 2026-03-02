@@ -1,0 +1,17 @@
+name: 'SOLAR — Upload Artifacts'
+description: 'Save test, coverage, and security reports for SOLAR'
+
+runs:
+  using: composite
+  steps:
+    - name: Upload all reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-reports-${{ github.run_id }}
+        path: |
+          coverage.xml
+          htmlcov/
+          bandit-report.json
+        retention-days: 30
+        if-no-files-found: ignore

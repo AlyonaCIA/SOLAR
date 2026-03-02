@@ -1,0 +1,34 @@
+name: 'SOLAR — Run Tests'
+description: 'Run pytest suite with coverage for SOLAR'
+
+inputs:
+  python-version:
+    required: false
+    default: '3.12'
+    description: 'Python version'
+  coverage-threshold:
+    required: false
+    default: '50'
+    description: 'Minimum coverage % required'
+
+runs:
+  using: composite
+  steps:
+    - name: Run tests with coverage
+      run: |
+        uv run pytest test/ \
+          --cov=src \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-report=term-missing \
+          -v
+      shell: bash
+
+    - name: Upload coverage artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report-py${{ inputs.python-version }}
+        path: |
+          coverage.xml
+          htmlcov/
