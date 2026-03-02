@@ -137,8 +137,8 @@ cython_debug/
 # Exclude specific files and directories
 *.code-workspace
 
-# Exclude specific github-workspace
-.github/
+# Exclude specific github-workspace (keep .github/workflows)
+# .github/
 
 # Ignore logs and databases
 *.log
