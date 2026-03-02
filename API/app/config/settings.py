@@ -9,7 +9,6 @@ config = {
     "channels": None,  # List of channels like ['94', '131', '171'], or None for all
     "image_size": 512,  # Default size for both JP2 and FITS
     "jp2_mask_radius": 1600,  # JP2-specific setting
-    
     # Algorithm parameters
     "contamination": 0.05,
     "anomaly_thresholds": [0.1],

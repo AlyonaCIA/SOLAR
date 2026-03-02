@@ -30,9 +30,8 @@ from datetime import datetime
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from sunpy.net import Fido
+from sunpy.net import Fido, jsoc
 from sunpy.net import attrs as a
-from sunpy.net import jsoc
 
 # ----------------------------
 # Functions for constructing the SDO query
@@ -51,34 +50,35 @@ def validate_parameters(item, duration: u.Quantity) -> None:
     """
     aia_cad_12 = [94, 131, 171, 193, 211, 304, 335]
     aia_cad_24 = [1600, 1700]
-    valid_items = aia_cad_12 + aia_cad_24 + ['hmi', 'dopplergram']
+    valid_items = aia_cad_12 + aia_cad_24 + ["hmi", "dopplergram"]
 
     if isinstance(item, str):
         if item.lower() not in map(str.lower, valid_items):
-            raise ValueError(
-                "Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
+            raise ValueError("Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
     elif isinstance(item, int):
         if item not in valid_items:
-            raise ValueError(
-                "Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
+            raise ValueError("Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
     else:
         raise ValueError("Item must be an integer or a string")
 
-    if isinstance(item, str) and item.lower() in [
-            'hmi', 'dopplergram'] and duration < 45 * u.s:
-        raise ValueError(
-            "The selected sample duration is lower than the instrument cadence for HMI or Dopplergram")
+    if isinstance(item, str) and item.lower() in ["hmi", "dopplergram"] and duration < 45 * u.s:
+        raise ValueError("The selected sample duration is lower than the instrument cadence for HMI or Dopplergram")
     if item in aia_cad_12 and duration < 12 * u.s:
-        raise ValueError(
-            "The selected sample duration is lower than the instrument cadence for AIA EUV 12s")
+        raise ValueError("The selected sample duration is lower than the instrument cadence for AIA EUV 12s")
     if item in aia_cad_24 and duration < 24 * u.s:
-        raise ValueError(
-            "The selected sample duration is lower than the instrument cadence for AIA UV 24s")
+        raise ValueError("The selected sample duration is lower than the instrument cadence for AIA UV 24s")
 
 
-def construct_query(item, bottom_left: SkyCoord, top_right: SkyCoord,
-                    start_time: str, end_time: str, email: str,
-                    duration: u.Quantity, tracking: bool):
+def construct_query(
+    item,
+    bottom_left: SkyCoord,
+    top_right: SkyCoord,
+    start_time: str,
+    end_time: str,
+    email: str,
+    duration: u.Quantity,
+    tracking: bool,
+):
     """Constructs a query for the SDO data.
 
     Parameters:
@@ -106,7 +106,7 @@ def construct_query(item, bottom_left: SkyCoord, top_right: SkyCoord,
             jsoc.Series.aia_lev1_euv_12s,
             jsoc.Notify(email),
             jsoc.Segment.image,
-            cutout
+            cutout,
         )
     if item in aia_cad_24:
         return Fido.search(
@@ -116,43 +116,49 @@ def construct_query(item, bottom_left: SkyCoord, top_right: SkyCoord,
             jsoc.Series.aia_lev1_uv_24s,  # Corrected Series name
             jsoc.Notify(email),
             jsoc.Segment.image,
-            cutout
+            cutout,
         )
-    if str(item).lower() == 'hmi':
+    if str(item).lower() == "hmi":
         return Fido.search(
             a.Time(start_time, end_time),
             a.Sample(duration),
-            jsoc.Series('hmi.M_45s'),
+            jsoc.Series("hmi.M_45s"),
             jsoc.Notify(email),
             jsoc.Segment.magnetogram,
-            cutout
+            cutout,
         )
-    if str(item).lower() == 'dopplergram':
+    if str(item).lower() == "dopplergram":
         return Fido.search(
             a.Time(start_time, end_time),
             a.Sample(duration),
-            jsoc.Series('hmi.v_45s'),
+            jsoc.Series("hmi.v_45s"),
             jsoc.Notify(email),
             jsoc.Segment.dopplergram,
-            cutout
+            cutout,
         )
     raise ValueError("Unsupported item provided")
 
 
-def get_query_sdo(item, bottom_left: SkyCoord, top_right: SkyCoord,
-                  start_time: str, end_time: str, email: str,
-                  duration: u.Quantity, tracking: bool = False):
+def get_query_sdo(
+    item,
+    bottom_left: SkyCoord,
+    top_right: SkyCoord,
+    start_time: str,
+    end_time: str,
+    email: str,
+    duration: u.Quantity,
+    tracking: bool = False,
+):
     """Constructs a query to search for SDO data based on specified parameters.
 
     Returns:
         Query object from Fido.search or None if parameters are invalid.
     """
-    if any(param is None for param in [item, bottom_left,
-           top_right, start_time, end_time, email, duration]):
+    if any(param is None for param in [item, bottom_left, top_right, start_time, end_time, email, duration]):
         return None
     validate_parameters(item, duration)
-    return construct_query(item, bottom_left, top_right, start_time,
-                           end_time, email, duration, tracking)
+    return construct_query(item, bottom_left, top_right, start_time, end_time, email, duration, tracking)
+
 
 # ----------------------------
 # Main Script
@@ -162,24 +168,28 @@ def get_query_sdo(item, bottom_left: SkyCoord, top_right: SkyCoord,
 def main():
     # --- Set the date/time and region parameters ---
     # Choose a quiet date and a 30-minute interval (example: April 1, 2019)
-    start_date_str = '2019-04-01T00:00:00.00'
-    end_date_str = '2019-04-01T00:30:00.00'
+    start_date_str = "2019-04-01T00:00:00.00"
+    end_date_str = "2019-04-01T00:30:00.00"
     date_format = "%Y-%m-%dT%H:%M:%S.%f"
     start_time_global = datetime.strptime(start_date_str, date_format)
     datetime.strptime(end_date_str, date_format)
 
     # Define the center and square size for the image cutout
     center_x, center_y = 0, 0  # in arcseconds (modify if needed)
-    half_square_size = 1210   # in arcseconds
+    half_square_size = 1210  # in arcseconds
     top_right_coord = SkyCoord(
         (center_x + half_square_size) * u.arcsec,
         (center_y + half_square_size) * u.arcsec,
-        obstime=start_time_global, observer="earth", frame="helioprojective"
+        obstime=start_time_global,
+        observer="earth",
+        frame="helioprojective",
     )
     bottom_left_coord = SkyCoord(
         (center_x - half_square_size) * u.arcsec,
         (center_y - half_square_size) * u.arcsec,
-        obstime=start_time_global, observer="earth", frame="helioprojective"
+        obstime=start_time_global,
+        observer="earth",
+        frame="helioprojective",
     )
 
     # --- Set additional parameters ---
@@ -191,7 +201,7 @@ def main():
     aia_euv_channels = [1600, 1700]
 
     # Base directory for saving downloaded data
-    download_base_path = './sdo_data/'
+    download_base_path = "./sdo_data/"
     os.makedirs(download_base_path, exist_ok=True)
 
     # --- Loop over channels and download data ---
@@ -209,7 +219,7 @@ def main():
             end_date_str,
             contact_email,
             sample_interval,
-            tracking=False
+            tracking=False,
         )
 
         if query_result:
@@ -218,8 +228,7 @@ def main():
             channel_path = os.path.join(download_base_path, f"aia_{channel}")
             os.makedirs(channel_path, exist_ok=True)
             try:
-                files_downloaded = Fido.fetch(
-                    query_result, path=os.path.join(channel_path, "{file}"))
+                files_downloaded = Fido.fetch(query_result, path=os.path.join(channel_path, "{file}"))
                 print(f"Downloaded files for channel {channel}:")
                 for f in files_downloaded:
                     print(f"  - {f}")
@@ -243,8 +252,7 @@ def main():
             # else:
             #     print(f"No FITS files found in {channel_path}")
         else:
-            print(f"Query result is None for channel {
-                  channel}. Please check input parameters.")
+            print(f"Query result is None for channel {channel}. Please check input parameters.")
 
 
 if __name__ == "__main__":

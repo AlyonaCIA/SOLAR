@@ -51,7 +51,6 @@ coverage.xml
 cover/
 
 # uv
-uv.lock
 .python-version
 
 # Ruff

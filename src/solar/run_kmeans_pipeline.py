@@ -10,7 +10,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # --- Add project root to sys.path ---
 # This allows importing from 'src' when running the script from the root directory.
@@ -23,15 +22,15 @@ try:
         # print(f"DEBUG: Added '{PROJECT_ROOT}' to sys.path")
 except NameError:
     # Handle cases where __file__ might not be defined (e.g., interactive)
-    PROJECT_ROOT = Path('.').resolve()
+    PROJECT_ROOT = Path(".").resolve()
     if str(PROJECT_ROOT) not in sys.path:
-         sys.path.insert(0, str(PROJECT_ROOT))
+        sys.path.insert(0, str(PROJECT_ROOT))
 
 # Configure logging for the script and imported modules
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
 
@@ -54,9 +53,7 @@ except ImportError as e:
 def _parse_arguments() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
-        description=(
-            "Run SDO/AIA Anomaly Detection Pipeline with K-Means Clustering"
-        ),
+        description=("Run SDO/AIA Anomaly Detection Pipeline with K-Means Clustering"),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -69,23 +66,21 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--channels",
         type=str,
-        nargs='+',
-        default=[
-            '94', '131', '171', '193', '211', '233', '304', '335', '700'
-        ],
+        nargs="+",
+        default=["94", "131", "171", "193", "211", "233", "304", "335", "700"],
         help="List of AIA channel wavelengths (e.g., '94' '131').",
     )
     parser.add_argument(
         "--anomaly_thresholds",
         type=float,
-        nargs='+',
+        nargs="+",
         default=[0.1],
         help="Threshold(s) for anomaly detection scores. Lower is more sensitive.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="./output_figures_kmeans", # Default specific to this script
+        default="./output_figures_kmeans",  # Default specific to this script
         help="Directory to save output figures and results.",
     )
     parser.add_argument(
@@ -121,15 +116,13 @@ def _parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _get_image_size(args_image_size: int) -> Optional[int]:
+def _get_image_size(args_image_size: int) -> int | None:
     """Determines the image size for the pipeline based on arguments."""
     if args_image_size == -1:
         log.info("Image size set to None, processing images at original size.")
         return None
     elif args_image_size <= 0:
-        log.error(
-            f"Invalid image size: {args_image_size}. Must be positive or -1."
-        )
+        log.error(f"Invalid image size: {args_image_size}. Must be positive or -1.")
         exit(1)
     else:
         log.info(f"Images will be resized to: {args_image_size}x{args_image_size}")
@@ -139,16 +132,16 @@ def _get_image_size(args_image_size: int) -> Optional[int]:
 def _print_results_summary(results: dict, pipeline: SolarAnomalyPipeline, thresholds: list):
     """Prints a formatted summary of the pipeline results."""
     print("\n--- Pipeline Run Summary ---")
-    status = results.get('status', 'Unknown')
+    status = results.get("status", "Unknown")
     print(f"Status: {status}")
     if status == "error":
         print(f"Message: {results.get('message', 'No error message provided.')}")
         return
 
     # Safely access potentially protected attributes for info
-    loaded_channels = getattr(pipeline, '_loaded_channel_names', [])
-    img_shape = getattr(pipeline, '_image_shape', 'N/A')
-    valid_pixels = getattr(pipeline, '_total_valid_pixels', 'N/A')
+    loaded_channels = getattr(pipeline, "_loaded_channel_names", [])
+    img_shape = getattr(pipeline, "_image_shape", "N/A")
+    valid_pixels = getattr(pipeline, "_total_valid_pixels", "N/A")
 
     print(f"Data directory: {pipeline.data_dir}")
     print(f"Output directory: {pipeline.output_dir}")
@@ -164,12 +157,12 @@ def _print_results_summary(results: dict, pipeline: SolarAnomalyPipeline, thresh
         res = results.get(threshold)
         if res:
             print(f"  Threshold {threshold:.2f}:")
-            anom_count = res.get('anomalous_pixels_count', 'N/A')
-            total_pix = res.get('total_pixels_in_image_grid', 'N/A')
-            perc_total = res.get('anomaly_percentage_of_total', 0.0)
-            n_clusters_found = res.get('n_clusters_found', 'N/A')
-            inertia = res.get('clustering_inertia')
-            plot_path = res.get('plot_path', 'N/A')
+            anom_count = res.get("anomalous_pixels_count", "N/A")
+            total_pix = res.get("total_pixels_in_image_grid", "N/A")
+            perc_total = res.get("anomaly_percentage_of_total", 0.0)
+            n_clusters_found = res.get("n_clusters_found", "N/A")
+            inertia = res.get("clustering_inertia")
+            plot_path = res.get("plot_path", "N/A")
             cluster_stats = res.get("cluster_stats", [])
 
             print(f"    Anomalous Pixels: {anom_count} / {total_pix} ({perc_total:.2f}%)")
@@ -180,9 +173,9 @@ def _print_results_summary(results: dict, pipeline: SolarAnomalyPipeline, thresh
             if cluster_stats:
                 print("    Cluster Stats:")
                 for stats in cluster_stats:
-                    idx = stats.get('cluster_index', '?')
-                    count = stats.get('pixel_count', '?')
-                    perc = stats.get('percentage_of_anomalies', 0.0)
+                    idx = stats.get("cluster_index", "?")
+                    count = stats.get("pixel_count", "?")
+                    perc = stats.get("percentage_of_anomalies", 0.0)
                     print(f"      Cluster {idx}: {count} pixels ({perc:.2f}%)")
             else:
                 print("    No cluster stats (e.g., no anomalies found).")
@@ -199,9 +192,7 @@ def main():
 
     # Optional: Check if data_dir exists here for early feedback
     if not os.path.isdir(args.data_dir):
-        log.warning(
-            f"Data directory '{args.data_dir}' not found. Pipeline will likely fail."
-        )
+        log.warning(f"Data directory '{args.data_dir}' not found. Pipeline will likely fail.")
         # Consider exiting here if you want stricter checks upfront:
         # log.critical(f"Data directory '{args.data_dir}' not found. Exiting.")
         # exit(1)
@@ -217,7 +208,7 @@ def main():
             image_size=image_size_for_pipeline,
             contamination=args.contamination,
             n_clusters=args.n_clusters,
-            cluster_method='KMeans',  # Specific to this script
+            cluster_method="KMeans",  # Specific to this script
             random_state=args.random_state,
         )
 
@@ -232,7 +223,7 @@ def main():
     except Exception as e:
         log.critical(
             f"An unexpected error occurred during pipeline execution: {e}",
-            exc_info=True, # Log traceback for unexpected errors
+            exc_info=True,  # Log traceback for unexpected errors
         )
 
     log.info("--- K-Means Anomaly Detection Pipeline Finished ---")

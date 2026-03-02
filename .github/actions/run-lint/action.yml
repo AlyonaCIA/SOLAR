@@ -1,0 +1,14 @@
+name: 'SOLAR — Linting'
+description: 'Code quality checks with Ruff and mypy for SOLAR'
+
+runs:
+  using: composite
+  steps:
+    - name: Run Ruff linter
+      run: uv run ruff check src/ API/app/ test/
+      shell: bash
+
+    - name: Run mypy type checking
+      run: uv run mypy src/
+      shell: bash
+      continue-on-error: true

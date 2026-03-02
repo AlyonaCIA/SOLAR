@@ -1,58 +1,61 @@
 import os
-import numpy as np
+
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
-import matplotlib.pyplot as plt
+import numpy as np
+
+matplotlib.use("Agg")  # Use non-interactive backend
 import datetime
 import io
 
+import matplotlib.pyplot as plt
+
 # Import the necessary pipeline modules
-from app.api.pipeline.data_loader import load_fits_data, create_circular_mask, preprocess_image
-from app.api.pipeline.data_loader import load_masked_channel_data_jp2
-from app.api.pipeline.model import (
-    detect_anomalies_isolation_forest,
-    perform_kmeans_clustering,
-    create_cluster_mask
+from app.api.pipeline.data_loader import (
+    create_circular_mask,
+    load_fits_data,
+    load_masked_channel_data_jp2,
+    preprocess_image,
 )
+from app.api.pipeline.model import create_cluster_mask, detect_anomalies_isolation_forest, perform_kmeans_clustering
 from app.api.pipeline.preprocess import prepare_data_concatenated
-from app.api.pipeline.visualization import plot_results, plot_single_channel
+from app.api.pipeline.visualization import plot_single_channel
+
 
 def run_pipeline(config):
     """Run the anomaly detection pipeline."""
     # Create output directory if it doesn't exist
     output_dir = config["output_dir"]
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # List to collect visualization results (buffer, object_name)
     visualization_results = []
-    
+
     # Step 1: Load and preprocess data
     print("\n--- Step 1: Loading and preprocessing data ---\n")
-    
+
     masked_data_list = []
     channel_names = []
-    
+
     if config.get("file_type", "fits").lower() == "fits":
         # Process FITS files
         print("Processing FITS files...")
-        
+
         # Get list of subdirectories for each channel
         data_dir = config["data_dir"]
         channels_to_process = config.get("channels", [])
-        
+
         # If specific channels are defined, use those, otherwise try to find all available ones
         if not channels_to_process:
             all_dirs = os.listdir(data_dir)
-            channels_to_process = [d.split("_")[1] if "_" in d else d 
-                                  for d in all_dirs 
-                                  if os.path.isdir(os.path.join(data_dir, d))]
-            
+            channels_to_process = [
+                d.split("_")[1] if "_" in d else d for d in all_dirs if os.path.isdir(os.path.join(data_dir, d))
+            ]
+
             # Filter out non-EUV channels if needed
-            channels_to_process = [c for c in channels_to_process 
-                                  if c not in ['1600', '1700']]
-        
+            channels_to_process = [c for c in channels_to_process if c not in ["1600", "1700"]]
+
         print(f"Processing channels: {channels_to_process}")
-        
+
         for channel in channels_to_process:
             try:
                 # Construct channel directory path - handle different formats
@@ -63,7 +66,7 @@ def run_pipeline(config):
                 else:
                     print(f"Warning: Could not find directory for channel {channel}. Skipping.")
                     continue
-                
+
                 data, metadata = load_fits_data(channel_dir)
 
                 # --- Ensure we use a 2D slice ---
@@ -80,53 +83,46 @@ def run_pipeline(config):
 
                 mask = create_circular_mask(data2d, metadata)
                 masked_data = preprocess_image(data2d, mask, config.get("image_size", 512))
-                
+
                 # Append processed data
                 masked_data_list.append(masked_data)
                 channel_names.append(channel)
-                
+
                 print(f"Successfully processed channel {channel}. Shape: {masked_data.shape}")
-                
+
             except Exception as e:
                 print(f"Error processing channel {channel}: {e}")
                 continue
     else:
         # Process JP2 files
         masked_data_list, channel_names, _ = load_masked_channel_data_jp2(
-            config["data_dir"],
-            config.get("image_size", 512),
-            mask_radius=config.get("jp2_mask_radius", 1600)
+            config["data_dir"], config.get("image_size", 512), mask_radius=config.get("jp2_mask_radius", 1600)
         )
-    
+
     if not masked_data_list:
         raise ValueError(f"No {config.get('file_type', 'jp2')} files were successfully processed.")
-        
+
     print(f"\nProcessed {len(masked_data_list)} channels: {channel_names}")
-    
+
     # Print statistics about valid pixels per channel
     print("\nChecking masked data before concatenation:")
-    for i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
+    for _i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
         valid_count = np.sum(~np.isnan(data))
         total_count = data.size
-        print(f"Channel {channel}: {valid_count}/{total_count} valid pixels ({valid_count/total_count*100:.2f}%)")
+        print(f"Channel {channel}: {valid_count}/{total_count} valid pixels ({valid_count / total_count * 100:.2f}%)")
 
     # Prepare data for anomaly detection
-    prepared_data, valid_pixel_mask_1d, nan_mask_1d = prepare_data_concatenated(
-        masked_data_list
-    )
-    
+    prepared_data, valid_pixel_mask_1d, nan_mask_1d = prepare_data_concatenated(masked_data_list)
+
     # Create 2D mask for visualization
     img_size = config.get("image_size", 512)
     valid_pixel_mask_2d = valid_pixel_mask_1d.reshape((img_size, img_size))
-    
+
     print(f"\nData prepared for modeling: {prepared_data.shape}")
-    
+
     # Step 2: Detect anomalies using Isolation Forest
     print("\n--- Step 2: Detecting anomalies with Isolation Forest ---\n")
-    anomaly_scores = detect_anomalies_isolation_forest(
-        prepared_data, 
-        config.get("contamination", 0.05)
-    )
+    anomaly_scores = detect_anomalies_isolation_forest(prepared_data, config.get("contamination", 0.05))
 
     # Create anomaly map
     anomaly_map_2d = np.full((img_size, img_size), np.nan)
@@ -134,102 +130,93 @@ def run_pipeline(config):
 
     # Step 3: Perform clustering on the anomalies
     print("\n--- Step 3: Performing clustering on anomalies ---\n")
-    
+
     # Use the specified thresholds or defaults
     anomaly_thresholds = config.get("anomaly_thresholds", [-0.05, -0.1, -0.15])
-    
+
     results = {}
-    
+
     # For each threshold, create cluster masks and visualizations
     for threshold in anomaly_thresholds:
-        threshold_str = str(abs(threshold)).replace('.', '_')
+        threshold_str = str(abs(threshold)).replace(".", "_")
         threshold_dir = os.path.join(output_dir, f"threshold_{threshold_str}")
         os.makedirs(threshold_dir, exist_ok=True)
-        
+
         print(f"\nProcessing threshold {threshold}...")
-        
+
         # Apply threshold to get anomaly mask
         anomaly_mask = anomaly_scores <= threshold
         anomaly_mask_2d = np.full((img_size, img_size), False)
         anomaly_mask_2d[valid_pixel_mask_2d] = anomaly_mask
-        
+
         anomaly_count = np.sum(anomaly_mask)
-        print(f"Found {anomaly_count} anomalous points ({anomaly_count/prepared_data.shape[0]*100:.2f}% of valid pixels)")
-        
+        print(
+            f"Found {anomaly_count} anomalous points ({anomaly_count / prepared_data.shape[0] * 100:.2f}% of valid pixels)"
+        )
+
         # Skip if no anomalies found
         if not np.any(anomaly_mask):
             print(f"No anomalies found for threshold {threshold}. Skipping clustering.")
             continue
-        
+
         # Perform K-means clustering on anomalies
         cluster_labels, inertia = perform_kmeans_clustering(
-            prepared_data, 
-            anomaly_scores,
-            threshold, 
-            config.get("n_clusters", 5), 
-            config.get("random_state", 42)
+            prepared_data, anomaly_scores, threshold, config.get("n_clusters", 5), config.get("random_state", 42)
         )
-        
+
         # Create cluster mask
-        cluster_mask_result = create_cluster_mask(
-            anomaly_mask_2d,
-            cluster_labels,
-            valid_pixel_mask_1d,
-            img_size
-        )
-        
+        cluster_mask_result = create_cluster_mask(anomaly_mask_2d, cluster_labels, valid_pixel_mask_1d, img_size)
+
         cluster_mask_2d = cluster_mask_result[0]
         cluster_cmap = cluster_mask_result[1]
         cluster_patches = cluster_mask_result[2]
         n_clusters = cluster_mask_result[3]
-        
+
         # Count pixels per cluster
         cluster_stats = []
         if n_clusters > 0:
-            for cluster_id in range(1, n_clusters+1):
+            for cluster_id in range(1, n_clusters + 1):
                 count = np.sum(cluster_mask_2d == cluster_id)
                 percentage = count / anomaly_count * 100 if anomaly_count > 0 else 0
-                cluster_stats.append({
-                    "cluster_id": cluster_id,
-                    "pixel_count": int(count),
-                    "percentage": float(percentage)
-                })
+                cluster_stats.append(
+                    {"cluster_id": cluster_id, "pixel_count": int(count), "percentage": float(percentage)}
+                )
                 print(f"  Cluster {cluster_id}: {count} pixels ({percentage:.2f}%)")
-        
+
         results[threshold] = {
             "anomaly_count": int(anomaly_count),
             "n_clusters": n_clusters,
             "cluster_stats": cluster_stats,
-            "threshold_dir": threshold_dir
+            "threshold_dir": threshold_dir,
         }
-        
+
         # Plot anomaly map and add to visualization results
         plt.figure(figsize=(8, 6))
-        plt.imshow(anomaly_map_2d, cmap='coolwarm_r')
-        plt.colorbar(label='Anomaly Score')
-        plt.title(f'Anomaly Map (T:{threshold})')
-        plt.axis('off')
+        plt.imshow(anomaly_map_2d, cmap="coolwarm_r")
+        plt.colorbar(label="Anomaly Score")
+        plt.title(f"Anomaly Map (T:{threshold})")
+        plt.axis("off")
         buffer = io.BytesIO()
-        plt.savefig(buffer, format='jpeg', dpi=75, bbox_inches=None)
+        plt.savefig(buffer, format="jpeg", dpi=75, bbox_inches=None)
         plt.close()
         buffer.seek(0)
-        visualization_results.append((buffer, f'anomaly_map_{threshold_str}.jpg'))
-        
+        visualization_results.append((buffer, f"anomaly_map_{threshold_str}.jpg"))
+
         # Plot cluster map and add to visualization results
         if n_clusters > 0:
             plt.figure(figsize=(8, 6))
             plt.imshow(cluster_mask_2d, cmap=cluster_cmap)
-            plt.colorbar(label='Cluster ID')
-            plt.title(f'Cluster Map (T:{threshold}, {n_clusters} clusters)')
-            plt.axis('off')
+            plt.colorbar(label="Cluster ID")
+            plt.title(f"Cluster Map (T:{threshold}, {n_clusters} clusters)")
+            plt.axis("off")
             buffer = io.BytesIO()
-            plt.savefig(buffer, format='jpeg', dpi=75, bbox_inches=None)
+            plt.savefig(buffer, format="jpeg", dpi=75, bbox_inches=None)
             plt.close()
             buffer.seek(0)
-            visualization_results.append((buffer, f'cluster_map_{threshold_str}.jpg'))
-        
+            visualization_results.append((buffer, f"cluster_map_{threshold_str}.jpg"))
+
         # Plot each channel with overlaid clusters and collect results
-        for i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
+        for _i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
             vis_result = plot_single_channel(
                 data,
                 cluster_mask_global=cluster_mask_2d,
@@ -242,16 +229,16 @@ def run_pipeline(config):
                 total_pixels_resized=img_size * img_size,
                 anomaly_pixels_count=anomaly_count,
                 file_type=config.get("file_type", "jp2"),
-                clustering_method_name="K-Means"
+                clustering_method_name="K-Means",
             )
             if vis_result is not None and vis_result[0] is not None:
                 visualization_results.append(vis_result)
-    
+
     # Generate individual channel visualizations
     # print("\n--- Step 4: Generating channel visualizations ---\n")
     # channel_dir = os.path.join(output_dir, "channel_results")
     # os.makedirs(channel_dir, exist_ok=True)
-    
+
     # for i, (data, channel) in enumerate(zip(masked_data_list, channel_names)):
     #     try:
     #         vis_result = plot_single_channel(
@@ -263,17 +250,18 @@ def run_pipeline(config):
     #             visualization_results.append(vis_result)
     #     except Exception as e:
     #         print(f"Error visualizing channel {channel}: {e}")
-    
+
     print(f"\nPipeline completed successfully. Generated {len(visualization_results)} visualizations.")
-    
+
     # Return results including visualization results
     return {
         "visualization_results": visualization_results,
         "thresholds": anomaly_thresholds,
         "num_anomalies": sum(results.get(t, {}).get("anomaly_count", 0) for t in anomaly_thresholds),
         "num_clusters": sum(results.get(t, {}).get("n_clusters", 0) for t in anomaly_thresholds),
-        **results
+        **results,
     }
+
 
 def run_single_channel_pipeline(config, timestamp=None):
     """
@@ -285,7 +273,7 @@ def run_single_channel_pipeline(config, timestamp=None):
     config : dict
         Pipeline configuration dictionary
     timestamp : str, optional
-        Timestamp to use in output filenames. If None, current time will be used.    
+        Timestamp to use in output filenames. If None, current time will be used.
     """
     if timestamp is None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -296,9 +284,7 @@ def run_single_channel_pipeline(config, timestamp=None):
     # --- Step 1: Load and preprocess masked channel data ---
     print("Step 1: Loading and preprocessing masked channel data...\n")
     masked_data_list, channel_names, jp2_paths = load_masked_channel_data_jp2(
-        config["data_dir"],
-        config["image_size"],
-        mask_radius=config.get("jp2_mask_radius", 1600)
+        config["data_dir"], config["image_size"], mask_radius=config.get("jp2_mask_radius", 1600)
     )
 
     # --- Step 2: Prepare data for anomaly detection ---
@@ -316,7 +302,7 @@ def run_single_channel_pipeline(config, timestamp=None):
     anomaly_map_2d[valid_pixel_mask_2d] = anomaly_scores
 
     total_pixels_resized = config["image_size"] * config["image_size"]
-    
+
     # List to collect visualization results
     visualization_results = []
 
@@ -326,7 +312,7 @@ def run_single_channel_pipeline(config, timestamp=None):
         # Create anomaly mask based on threshold
         anomaly_mask_global_2d = np.full((config["image_size"], config["image_size"]), False)
         valid_score_mask = ~np.isnan(anomaly_map_2d)
-        anomaly_mask_global_2d[valid_score_mask] = (anomaly_map_2d[valid_score_mask] < anomaly_threshold)
+        anomaly_mask_global_2d[valid_score_mask] = anomaly_map_2d[valid_score_mask] < anomaly_threshold
 
         anomaly_pixels_count = np.sum(anomaly_mask_global_2d)
 
@@ -350,28 +336,27 @@ def run_single_channel_pipeline(config, timestamp=None):
             # Instead of filtering the data here and passing only anomalous data,
             # we'll pass the full prepared_data and let the function do the filtering
             cluster_labels, _ = perform_kmeans_clustering(
-                prepared_data,            # Complete data
-                anomaly_scores,           # Complete anomaly scores  
-                anomaly_threshold,        # Threshold
-                config["n_clusters"],     # n_clusters
-                config["random_state"]    # random_state
+                prepared_data,  # Complete data
+                anomaly_scores,  # Complete anomaly scores
+                anomaly_threshold,  # Threshold
+                config["n_clusters"],  # n_clusters
+                config["random_state"],  # random_state
             )
-            
+
             # Create the final cluster mask
             # cluster_labels already has the correct shape from the function
             cluster_mask_final, cluster_cmap_final, cluster_patches_final, n_clusters_final = create_cluster_mask(
-                anomaly_mask_global_2d,
-                cluster_labels,
-                valid_pixel_mask_1d,
-                config["image_size"]
+                anomaly_mask_global_2d, cluster_labels, valid_pixel_mask_1d, config["image_size"]
             )
 
         # Plot results separately for each channel
-        for idx, (channel_data, channel_name) in enumerate(zip(masked_data_list, channel_names)):
+        for _idx, (channel_data, channel_name) in enumerate(zip(masked_data_list, channel_names)):
             # Create threshold-specific output directory
-            threshold_dir = os.path.join(config["output_dir"], f"threshold_{str(abs(anomaly_threshold)).replace('.', '_')}")
+            threshold_dir = os.path.join(
+                config["output_dir"], f"threshold_{str(abs(anomaly_threshold)).replace('.', '_')}"
+            )
             os.makedirs(threshold_dir, exist_ok=True)
-            
+
             vis_result = plot_single_channel(
                 masked_data=channel_data,
                 cluster_mask_global=cluster_mask_final,
@@ -385,7 +370,7 @@ def run_single_channel_pipeline(config, timestamp=None):
                 anomaly_pixels_count=anomaly_pixels_count,
                 file_type=config["file_type"],
                 clustering_method_name="K-Means",
-                timestamp=timestamp
+                timestamp=timestamp,
             )
             if vis_result is not None and vis_result[0] is not None:
                 visualization_results.append(vis_result)
@@ -393,7 +378,9 @@ def run_single_channel_pipeline(config, timestamp=None):
     print(f"Pipeline execution completed! Generated {len(visualization_results)} visualizations.")
     return {"visualization_results": visualization_results}
 
+
 ######### TESTING FUNCTIONS #########
+
 
 def save_and_list_raw_fits(config):
     """
@@ -411,10 +398,7 @@ def save_and_list_raw_fits(config):
         for fname in os.listdir(channel_dir):
             if fname.lower().endswith(".fits"):
                 full_path = os.path.abspath(os.path.join(channel_dir, fname))
-                fits_files.append({
-                    "channel": channel,
-                    "filename": fname,
-                    "path": full_path,
-                    "url": f"file://{full_path}"
-                })
+                fits_files.append(
+                    {"channel": channel, "filename": fname, "path": full_path, "url": f"file://{full_path}"}
+                )
     return fits_files

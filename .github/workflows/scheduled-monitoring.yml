@@ -1,0 +1,62 @@
+name: 'SOLAR Health Monitor — Weekly Audit'
+
+on:
+  schedule:
+    # Run every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  full-test-suite:
+    name: Full Test Suite (Py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Execute Full Test Coverage
+        uses: ./.github/actions/run-tests
+        with:
+          python-version: ${{ matrix.python-version }}
+          coverage-threshold: '50'
+
+  comprehensive-audit:
+    name: Security & Quality Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python Environment
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: '3.12'
+
+      - name: Verify Code Formatting
+        uses: ./.github/actions/run-format
+
+      - name: Assess Code Quality
+        uses: ./.github/actions/run-lint
+
+      - name: Scan Security Vulnerabilities
+        uses: ./.github/actions/run-audit
+
+  report:
+    name: Publish Health Reports
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [full-test-suite, comprehensive-audit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Archive Health Metrics
+        uses: ./.github/actions/upload-reports
+
+      - name: Health Check Summary
+        run: echo "SOLAR health monitoring completed. Review artifacts for detailed metrics."

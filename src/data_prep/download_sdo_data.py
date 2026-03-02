@@ -5,20 +5,18 @@ telescope."""
 # Standard library imports
 import os
 from datetime import datetime
-from typing import Union
 
 # Third-party imports
 import astropy.units as u
 import matplotlib.pyplot as plt
 import sunpy.map
 from astropy.coordinates import SkyCoord
-from sunpy.net import Fido
+from sunpy.net import Fido, jsoc
 from sunpy.net import attrs as a
-from sunpy.net import jsoc
 
 # Define the date range and format
-start_date_str = '2017-09-10T14:30:00.00'
-end_date_str = '2017-09-10T17:30:00.00'
+start_date_str = "2017-09-10T14:30:00.00"
+end_date_str = "2017-09-10T17:30:00.00"
 date_format = "%Y-%m-%dT%H:%M:%S.%f"
 
 # Define the center coordinates and the square size in arcseconds
@@ -33,12 +31,16 @@ end_time_global = datetime.strptime(end_date_str, date_format)
 top_right_coord = SkyCoord(
     (center_x + half_square_size) * u.arcsec,
     (center_y + half_square_size) * u.arcsec,
-    obstime=start_time_global, observer="earth", frame="helioprojective"
+    obstime=start_time_global,
+    observer="earth",
+    frame="helioprojective",
 )
 bottom_left_coord = SkyCoord(
     (center_x - half_square_size) * u.arcsec,
     (center_y - half_square_size) * u.arcsec,
-    obstime=start_time_global, observer="earth", frame="helioprojective"
+    obstime=start_time_global,
+    observer="earth",
+    frame="helioprojective",
 )
 
 # Define other parameters
@@ -47,7 +49,7 @@ sample_interval = 12 * u.second  # Cadence to sample data (12 seconds)
 contact_email = "Example@astro.uio.no"  # Contact email for data request
 
 
-def validate_parameters(item: Union[int, str], duration: u.Quantity) -> None:
+def validate_parameters(item: int | str, duration: u.Quantity) -> None:
     """Validates the input parameters for the SDO query.
 
     Parameters:
@@ -60,46 +62,47 @@ def validate_parameters(item: Union[int, str], duration: u.Quantity) -> None:
     aia_cad_12 = [94, 131, 171, 193, 211, 304, 335]
     aia_cad_24 = [1600, 1700]
 
-    valid_items = aia_cad_12 + aia_cad_24 + ['hmi', 'dopplergram']
+    valid_items = aia_cad_12 + aia_cad_24 + ["hmi", "dopplergram"]
 
     if isinstance(item, str):
         if item.lower() not in map(str.lower, valid_items):
-            raise ValueError(
-                "Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
+            raise ValueError("Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
 
     elif isinstance(item, int):
         if item not in valid_items:
-            raise ValueError(
-                "Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
+            raise ValueError("Supported items are AIA wavelengths, 'hmi', and 'dopplergram' only")
     else:
         raise ValueError("Item must be an integer or a string")
 
-    if isinstance(item, str) and item.lower() in ['hmi', 'dopplergram'] \
-            and duration < 45 * u.s:
+    if isinstance(item, str) and item.lower() in ["hmi", "dopplergram"] and duration < 45 * u.s:
         raise ValueError(
             "The selected sample duration is lower than the instrument cadence \
-                for HMI or Dopplergram")
+                for HMI or Dopplergram"
+        )
 
     if item in aia_cad_12 and duration < 12 * u.s:
         raise ValueError(
             "The selected sample duration is lower than the instrument cadence \
-                for AIA EUV 12s")
+                for AIA EUV 12s"
+        )
 
     if item in aia_cad_24 and duration < 24 * u.s:
         raise ValueError(
             "The selected sample duration is lower than the instrument cadence \
-                for AIA UV 24s")
+                for AIA UV 24s"
+        )
 
 
 def construct_query(
-        item: Union[int, str],
-        bottom_left: SkyCoord,
-        top_right: SkyCoord,
-        start_time: str,
-        end_time: str,
-        email: str,
-        duration: u.Quantity,
-        tracking: bool) -> Fido.search:
+    item: int | str,
+    bottom_left: SkyCoord,
+    top_right: SkyCoord,
+    start_time: str,
+    end_time: str,
+    email: str,
+    duration: u.Quantity,
+    tracking: bool,
+) -> Fido.search:
     """Constructs a query for the SDO data.
 
     Parameters:
@@ -129,48 +132,49 @@ def construct_query(
             jsoc.Series.aia_lev1_euv_12s,
             jsoc.Notify(email),
             jsoc.Segment.image,
-            cutout
+            cutout,
         )
     if item in aia_cad_24:
         return Fido.search(
             a.Time(start_time, end_time),
             a.Wavelength(item * u.angstrom),
             a.Sample(duration),
-            jsoc.Series('aia.lev1_uv_24s'),
+            jsoc.Series("aia.lev1_uv_24s"),
             jsoc.Notify(email),
             jsoc.Segment.image,
-            cutout
+            cutout,
         )
-    if str(item).lower() == 'hmi':
+    if str(item).lower() == "hmi":
         return Fido.search(
             a.Time(start_time, end_time),
             a.Sample(duration),
-            jsoc.Series('hmi.M_45s'),
+            jsoc.Series("hmi.M_45s"),
             jsoc.Notify(email),
             jsoc.Segment.magnetogram,
-            cutout
+            cutout,
         )
-    if str(item).lower() == 'dopplergram':
+    if str(item).lower() == "dopplergram":
         return Fido.search(
             a.Time(start_time, end_time),
             a.Sample(duration),
-            jsoc.Series('hmi.v_45s'),
+            jsoc.Series("hmi.v_45s"),
             jsoc.Notify(email),
             jsoc.Segment.dopplergram,
-            cutout
+            cutout,
         )
     raise ValueError("Unsupported item provided")
 
 
 def get_query_sdo(
-        item: Union[int, str],
-        bottom_left: SkyCoord,
-        top_right: SkyCoord,
-        start_time: str,
-        end_time: str,
-        email: str,
-        duration: u.Quantity,
-        tracking: bool = False) -> Union[Fido.search, None]:
+    item: int | str,
+    bottom_left: SkyCoord,
+    top_right: SkyCoord,
+    start_time: str,
+    end_time: str,
+    email: str,
+    duration: u.Quantity,
+    tracking: bool = False,
+) -> Fido.search | None:
     """Constructs a query to search for Solar Dynamics Observatory (SDO) data based on
     specified parameters.
 
@@ -189,33 +193,33 @@ def get_query_sdo(
     Returns:
         Fido.search: Query object for Fido search or None if parameters are invalid.
     """
-    if any(param is None for param in [item, bottom_left, top_right, start_time,
-                                       end_time, email, duration]):
+    if any(param is None for param in [item, bottom_left, top_right, start_time, end_time, email, duration]):
         return None
 
     validate_parameters(item, duration)
-    return construct_query(item, bottom_left, top_right, start_time,
-                           end_time, email, duration, tracking)
+    return construct_query(item, bottom_left, top_right, start_time, end_time, email, duration, tracking)
 
 
 # Example usage
 query_result = get_query_sdo(
-    wavelength_channel, bottom_left_coord, top_right_coord,
-    start_time_global, end_time_global, contact_email, sample_interval,
-    tracking=False
+    wavelength_channel,
+    bottom_left_coord,
+    top_right_coord,
+    start_time_global,
+    end_time_global,
+    contact_email,
+    sample_interval,
+    tracking=False,
 )
 
 if query_result:
-    file_download = Fido.fetch(query_result, path='src/data_prep/sdo_data/')
+    file_download = Fido.fetch(query_result, path="src/data_prep/sdo_data/")
 
     # Find the most recent FITS file in the download directory
-    fits_files = [f for f in os.listdir(
-        'src/data_prep/sdo_data/') if f.endswith('.fits')]
+    fits_files = [f for f in os.listdir("src/data_prep/sdo_data/") if f.endswith(".fits")]
     if fits_files:
         for fits_file in fits_files:
-            solar_map = sunpy.map.Map(
-                os.path.join('src/data_prep/sdo_data/', fits_file)
-            )
+            solar_map = sunpy.map.Map(os.path.join("src/data_prep/sdo_data/", fits_file))
 
             # Display the image using matplotlib
             plt.figure()
