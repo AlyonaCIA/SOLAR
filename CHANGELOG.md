@@ -14,11 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial setup and structure of the repository.
 - GitHub Actions workflows for CI/CD.
 - Pre-commit hooks for code quality.
+- New `LICENSE` file with dual licensing model:
+   - Academic/non-commercial use is free.
+   - Commercial/enterprise use requires paid commercial license.
+- New architecture section in `README.md` with Mermaid diagram aligned to `API/`, `src/`, and `scheduled_processing/`.
+- Added explicit `Quick Start` instructions in README for local environment setup.
+- Added execution examples for both local pipeline and FastAPI service.
+- Added badges in README for Python, FastAPI, DVC, and licensing model.
+- Added concise project structure block for easier onboarding of new contributors.
 
 ### Changed
 
 - Initial discussions and planning for the project.
 - Defined initial strategy and objectives.
+- Standardized and simplified `README.md` structure for clearer onboarding.
+- Updated README licensing section to reference dual-license terms.
+- Improved readability of repository documentation with clearer section ordering.
+- Reduced noise and removed inconsistent markdown fragments from old README content.
+- Aligned architecture narrative with current code organization and processing flow.
 
 ## [0.1.0] - 2024-07-02
 
